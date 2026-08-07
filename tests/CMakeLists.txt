@@ -14,4 +14,6 @@ target_compile_features(${TARGET} PUBLIC cxx_std_20)
 
 target_include_directories(${TARGET} PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
+target_link_libraries(${TARGET} PUBLIC Vulkan::Vulkan)
+
 add_test(NAME ${TARGET} COMMAND testlib) # Command can be a target
