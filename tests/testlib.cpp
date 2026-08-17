@@ -5,6 +5,40 @@
 #include <iostream>
 
 
+// zeichnet einen Command Buffer fuer einmalige enutzung auf
+VkCommandBuffer beginSingleTime(VkDevice device, VkCommandPool pool) {
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = pool;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer cmd = VK_NULL_HANDLE;
+	vkAllocateCommandBuffers(device, &allocInfo, &cmd);
+
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkBeginCommandBuffer(cmd, &beginInfo);
+
+	return cmd;
+}
+
+// beendet, schickt ab und wartet, bis die GPU fertig ist
+void endSingleTime(VkDevice device, VkCommandPool pool, VkQueue queue, VkCommandBuffer cmd) {
+	vkEndCommandBuffer(cmd);
+
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &cmd;
+
+	vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+	vkQueueWaitIdle(queue);
+
+	vkFreeCommandBuffers(device, pool, 1, &cmd);
+}
+
 
 int main() {
 
@@ -130,6 +164,26 @@ int main() {
 	vkGetDeviceQueue(device, computeFamily, 0, &computeQueue);
 
 	std::cout << "device ok\n";
+
+
+	// ### Command Pool und One Shot Submit Helper
+
+	VkCommandPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo.queueFamilyIndex = computeFamily;
+
+	VkCommandPool commandPool = VK_NULL_HANDLE;
+	res = vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool);
+	if (res != VK_SUCCESS) {
+		std::cerr << "vkCreateCommandPool failed: " << res << "\n";
+		return 1;
+	}
+
+	// Testlauf: leeren Command Buffer aufzeichnen und abschicken
+	VkCommandBuffer cmd = beginSingleTime(device, commandPool);
+	endSingleTime(device, commandPool, computeQueue, cmd);
+	std::cout << "command buffer ok\n";
+
 
 
 
