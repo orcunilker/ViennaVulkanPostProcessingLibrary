@@ -39,6 +39,19 @@ void endSingleTime(VkDevice device, VkCommandPool pool, VkQueue queue, VkCommand
 	vkFreeCommandBuffers(device, pool, 1, &cmd);
 }
 
+// sucht einen Speichertyp, der zu den Anforderungen passt
+uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+	VkPhysicalDeviceMemoryProperties memProps{};
+	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
+
+	for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+		bool typeOk = typeFilter & (1 << i);
+		bool propsOk = (memProps.memoryTypes[i].propertyFlags & properties) == properties;
+		if(typeOk && propsOk) return i;
+	}
+	throw std::runtime_error("kein passender Speichertyp gefunden");
+}
+
 
 int main() {
 
@@ -78,6 +91,7 @@ int main() {
 
 	std::cout << "instance ok\n";
 	
+
 	// ### Physical Device finden und die Compute-Queue-Family bestimmen
 
 	// Vulkan liefert Listen immer in zwei Aufrufen:
@@ -185,12 +199,79 @@ int main() {
 	std::cout << "command buffer ok\n";
 
 
+	// ### vkImage + speicher + view
+	
+	const uint32_t width = 256;
+	const uint32_t height = 256;
+
+	VkImageCreateInfo imageInfo{};
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	imageInfo.extent = { width, height, 1 };
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = 1;
+	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	
+	VkImage image = VK_NULL_HANDLE;
+	res = vkCreateImage(device, &imageInfo, nullptr, &image);
+	if (res != VK_SUCCESS) {
+		std::cerr << "vkCreateImage failed: " << res << "\n"; 
+		return 1;
+	}
+
+	// vkCreateImage legt keinen Speicher an - den besorgen und binden wir selbst
+	VkMemoryRequirements memReq{};
+	vkGetImageMemoryRequirements(device, image, &memReq);
+
+	VkMemoryAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize =  memReq.size;
+	allocInfo.memoryTypeIndex = findMemoryType(physicalDevice, memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VkDeviceMemory imageMemory = VK_NULL_HANDLE;
+	res = vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory);
+	if (res!=VK_SUCCESS) {
+		std::cerr << "vkAllocateMemory failed: " << res << "\n";
+		return 1;
+	}
+
+	vkBindImageMemory(device, image, imageMemory, 0);
+
+	// der View beschreibt, wie ein Shader auf das Image schaut
+	VkImageViewCreateInfo viewInfo{};
+	viewInfo.sType	= VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	viewInfo.image	= image;
+	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	viewInfo.format	= VK_FORMAT_R8G8B8A8_UNORM;
+	viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	viewInfo.subresourceRange.baseMipLevel = 0;
+	viewInfo.subresourceRange.levelCount = 1;
+	viewInfo.subresourceRange.baseArrayLayer = 0;
+	viewInfo.subresourceRange.layerCount = 1;
+
+	VkImageView imageView = VK_NULL_HANDLE;
+	res = vkCreateImageView(device, &viewInfo, nullptr, &imageView);
+	if (res != VK_SUCCESS) {
+		std::cerr << "vkCreateImageView failed: " << res << "\n";
+		return 1;
+	}
+	
+	std::cout << "image ok\n";
 
 
 
-
+	
+	vkDestroyImageView(device, imageView, nullptr);
+	vkDestroyImage(device, image, nullptr);
+	vkFreeMemory(device, imageMemory, nullptr);
 
 	vkDestroyCommandPool(device, commandPool, nullptr);
+
 	vkDestroyDevice(device, nullptr);
 	vkDestroyInstance(instance, nullptr);
 	return 0;
