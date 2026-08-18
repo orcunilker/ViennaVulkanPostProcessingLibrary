@@ -200,7 +200,7 @@ int main() {
 
 
 	// ### vkImage + speicher + view
-	
+
 	const uint32_t width = 256;
 	const uint32_t height = 256;
 
@@ -262,6 +262,53 @@ int main() {
 	}
 	
 	std::cout << "image ok\n";
+
+
+	// ### Image Barrier nach General + vkCmdClearColorImage
+
+	VkCommandBuffer cmd2 = beginSingleTime(device, commandPool);
+
+	// Layout-Uebergang UNDEFINED -> GENERAL, vorher duerfen wir das Image nicht benutzen
+	VkImageMemoryBarrier barrier{};
+	barrier.sType							= VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout 						= VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier.newLayout 						= VK_IMAGE_LAYOUT_GENERAL;
+	barrier.srcQueueFamilyIndex 			= VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex 			= VK_QUEUE_FAMILY_IGNORED;
+	barrier.image							= image;
+	barrier.srcAccessMask 					= 0;
+	barrier.dstAccessMask 					= VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.subresourceRange.aspectMask 	= VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel 	= 0;
+	barrier.subresourceRange.levelCount 	= 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount 	= 1;
+
+	vkCmdPipelineBarrier(cmd2,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, // worauf gewartet wird: auf nichts
+		VK_PIPELINE_STAGE_TRANSFER_BIT, // was warten muss: der Clear
+		0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+	// jetzt darf geschrieben werden
+	VkClearColorValue clearColor{};
+	clearColor.float32[0] = 1.0f;
+	clearColor.float32[1] = 0.0f;
+	clearColor.float32[2] = 0.0f;
+	clearColor.float32[3] = 1.0f;
+
+	VkImageSubresourceRange range{};
+	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	range.baseMipLevel = 0;
+	range.levelCount = 1;
+	range.baseArrayLayer = 0;
+	range.layerCount = 1;
+
+	vkCmdClearColorImage(cmd2, image, VK_IMAGE_LAYOUT_GENERAL, &clearColor, 1, &range);
+
+	endSingleTime(device, commandPool, computeQueue, cmd2);
+	std::cout << "clear ok\n";
+
+
 
 
 
