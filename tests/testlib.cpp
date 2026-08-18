@@ -3,6 +3,7 @@
 #include "VVPPL.h"
 #include <vector>
 #include <iostream>
+#include <fstream>
 
 
 // zeichnet einen Command Buffer fuer einmalige enutzung auf
@@ -308,10 +309,100 @@ int main() {
 	endSingleTime(device, commandPool, computeQueue, cmd2);
 	std::cout << "clear ok\n";
 
+	
+	// ### Image in Host-Buffer kopieren und als .ppm rausschreiben
+	
+	// Staging nBuffer - Speicher, an den die CPU herankommt
+	VkBufferCreateInfo bufferInfo{};
+	bufferInfo.sType	= VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size		= width * height * 4;
+	bufferInfo.usage	= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VkBuffer stagingBuffer = VK_NULL_HANDLE;
+	res = vkCreateBuffer(device, &bufferInfo, nullptr, &stagingBuffer);
+	if (res != VK_SUCCESS) {
+		std::cerr << "vkCreateBuffer failed: " << res << "\n"; return 1;
+	}
+
+	// Memory für den Buffer erstellen
+	// dafür erst mal nachschauen was für memory requirments der Buffer hat
+	VkMemoryRequirements bufReq{};
+	vkGetBufferMemoryRequirements(device, stagingBuffer, &bufReq);
+
+	VkMemoryAllocateInfo bufAlloc{};
+	bufAlloc.sType	= VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	bufAlloc.allocationSize = bufReq.size;
+	bufAlloc.memoryTypeIndex = findMemoryType(physicalDevice, bufReq.memoryTypeBits, 
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	// und dann endlich den Memory erstellen
+	VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+	vkAllocateMemory(device, &bufAlloc, nullptr, &stagingMemory);
+	
+	// Memory an Buffer binden
+	vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
+
+	// command buffer erstellen und anfangen zu füllen
+	VkCommandBuffer cmd3 = beginSingleTime(device, commandPool);
+
+	// GENERAL -> TRANSFER_SRC_OPTIMAL, Image layout optimieren für aktion
+	VkImageMemoryBarrier toSrc{};
+	toSrc.sType		= VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	toSrc.oldLayout	= VK_IMAGE_LAYOUT_GENERAL;
+	toSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	toSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	toSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	toSrc.image = image;
+	toSrc.srcAccessMask	= VK_ACCESS_TRANSFER_WRITE_BIT;
+	toSrc.subresourceRange = range;
+
+	vkCmdPipelineBarrier(cmd3, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0, 0, nullptr, 0, nullptr, 1 , &toSrc);
+	
+	// Image zum Buffer kopieren, damit wir es vom Host lesen können 
+	// (weil von der GRam kann man es nicht direkt lesen)
+	VkBufferImageCopy copy{}; // info glaub ich
+	copy.bufferOffset	= 0;
+	copy.bufferRowLength = 0; // 0 heißt dicht gepackt
+	copy.bufferImageHeight = 0;
+	copy.imageSubresource.aspectMask= VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.mipLevel	= 0;
+	copy.imageSubresource.baseArrayLayer = 0;
+	copy.imageSubresource.layerCount = 1;
+	copy.imageOffset = {0, 0, 0};
+	copy.imageExtent = {width, height, 1};
+
+	vkCmdCopyImageToBuffer(cmd3, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &copy);
+
+	// und jetzt flushen und den command buffer ausführen
+	endSingleTime(device, commandPool, computeQueue, cmd3);
+
+	// Speicher einblenden und als PPM rausschreiben
+	void* data = nullptr;
+	vkMapMemory(device, stagingMemory, 0, bufferInfo.size, 0, &data);
+	
+	const uint8_t* pixels = static_cast<const uint8_t*>(data);
+	std::ofstream file("output.ppm", std::ios::binary);
+	file << "P6\n" << width << " " << height << "\n255\n";
+	for (uint32_t i = 0; i < width * height; ++i){
+		file.write(reinterpret_cast<const char*>(&pixels[i*4]), 3); // rgb, alpha weglassen
+	}
+	file.close();
+
+	vkUnmapMemory(device, stagingMemory);
+	std::cout << "ppm ok\n";
 
 
 
 
+
+
+
+
+
+	vkDestroyBuffer(device, stagingBuffer, nullptr);
+	vkFreeMemory(device, stagingMemory, nullptr);
 	
 	vkDestroyImageView(device, imageView, nullptr);
 	vkDestroyImage(device, image, nullptr);
