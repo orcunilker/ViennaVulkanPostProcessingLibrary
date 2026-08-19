@@ -395,12 +395,93 @@ int main() {
 	std::cout << "ppm ok\n";
 
 
+	// ### descriptor set layout + pool + set, storage image einbinden
+
+	// beschreibt eine einzelne ressource binding 0, ein storage image, sichtbar im compute-shader
+	VkDescriptorSetLayoutBinding binding{};
+	binding.binding			= 0;
+	binding.descriptorType 	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	binding.descriptorCount	= 1;
+	binding.stageFlags		= VK_SHADER_STAGE_COMPUTE_BIT;
+
+	// das layout fasst alle bidnings zusammen - die form eiens descriptor sets
+	VkDescriptorSetLayoutCreateInfo layoutInfo {};
+	layoutInfo.sType		= VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount	= 1;
+	layoutInfo.pBindings	= &binding;
+
+	VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+	res = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout);
+	if(res != VK_SUCCESS){
+		std::cerr << "vkCreateDescriptorSetLayout failed: " << res << "\n";
+		return 1;
+	}
+
+	// wie viele descriptors welchen tryps des pool insegesamt vorhalten muss
+	VkDescriptorPoolSize poolSize{};
+	poolSize.type			= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	poolSize.descriptorCount = 1;
+
+	// der pool ist der Speicher, aus dem descroptor sets allozieert werden
+	VkDescriptorPoolCreateInfo descPoolInfo{};
+	descPoolInfo.sType		= VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	descPoolInfo.maxSets	= 1;
+	descPoolInfo.poolSizeCount	= 1;
+	descPoolInfo.pPoolSizes = &poolSize;
+
+	VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+	res = vkCreateDescriptorPool(device, &descPoolInfo, nullptr, &descriptorPool);
+	if(res != VK_SUCCESS){
+		std::cerr << "vkCreateDescriptorPool failed: " << res << "\n";
+		return 1;
+	}
+
+	// ein Set nach diesem layout aus dem pool holen
+	VkDescriptorSetAllocateInfo setAlloc{};
+	setAlloc.sType			= VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	setAlloc.descriptorPool	= descriptorPool;
+	setAlloc.descriptorSetCount	= 1;
+	setAlloc.pSetLayouts	= &descriptorSetLayout;
+
+	VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+	res = vkAllocateDescriptorSets(device, &setAlloc, &descriptorSet);
+		if(res != VK_SUCCESS){
+		std::cerr << "vkAllocateDescriptorSets failed: " << res << "\n";
+		return 1;
+	}
+
+	// welches konkrete Image gemeint ist und in welchem layout es beim Zugriff sein wird
+	VkDescriptorImageInfo imgInfo{};
+	imgInfo.imageView	= imageView;
+	imgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+	// schreibt das Image in Binding 0 des Sets
+	VkWriteDescriptorSet write{};
+	write.sType		= VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet	= descriptorSet;
+	write.dstBinding	= 0;
+	write.descriptorCount 	= 1;
+	write.descriptorType	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	write.pImageInfo		= &imgInfo;
+
+	vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+	std::cout << "descriptor ok\n";
 
 
 
 
 
 
+
+
+
+
+
+
+
+
+	vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+	vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
 	vkDestroyBuffer(device, stagingBuffer, nullptr);
 	vkFreeMemory(device, stagingMemory, nullptr);
