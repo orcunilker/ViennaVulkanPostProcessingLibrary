@@ -6,9 +6,79 @@
 
 namespace vvppl {
 
+    namespace anonym{
+        // kopiert aus testlib.cpp
+        // sucht einen Speichertyp, der zu den Anforderungen passt
+        uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+            VkPhysicalDeviceMemoryProperties memProps{};
+            vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
+
+            for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+                bool typeOk = typeFilter & (1 << i);
+                bool propsOk = (memProps.memoryTypes[i].propertyFlags & properties) == properties;
+                if(typeOk && propsOk) return i;
+            }
+            throw std::runtime_error("kein passender Speichertyp gefunden");
+        }
+    }
+
 	PostProcessing::PostProcessing(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height)
         : m_device(device), m_physicalDevice(physicalDevice), m_width(width), m_height(height)
     {
+        // ### image anlegen
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        imageInfo.extent = { width, height, 1 };
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        
+        VkResult res = vkCreateImage(device, &imageInfo, nullptr, &m_image);
+        if (res != VK_SUCCESS) {
+            throw std::runtime_error("vkCreateImage failed: " + std::to_string(res));
+        }
+
+        // vkCreateImage legt keinen Speicher an - den besorgen und binden wir selbst
+        VkMemoryRequirements memReq{};
+        vkGetImageMemoryRequirements(device, m_image, &memReq);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize =  memReq.size;
+        allocInfo.memoryTypeIndex = vvppl::anonym::findMemoryType(physicalDevice, memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        res = vkAllocateMemory(device, &allocInfo, nullptr, &m_imageMemory);
+        if (res!=VK_SUCCESS) {
+            throw std::runtime_error("vkAllocateMemory failed: " + std::to_string(res));
+        }
+
+        vkBindImageMemory(device, m_image, m_imageMemory, 0);
+
+        // der View beschreibt, wie ein Shader auf das Image schaut
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType	= VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image	= m_image;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format	= VK_FORMAT_R16G16B16A16_SFLOAT;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount = 1;
+
+        res = vkCreateImageView(device, &viewInfo, nullptr, &m_imageView);
+        if (res != VK_SUCCESS) {
+            throw std::runtime_error("vkCreateImageView failed: " + std::to_string(res));
+        }
+	    // std::cout << "image ok\n";
+
+
         // ### setup um pp pipeline zu erzeugen, durch die bei jedem apply(jeder frame)
         // durchgegangen wird
 
@@ -27,7 +97,7 @@ namespace vvppl {
         layoutInfo.bindingCount	= 1;
         layoutInfo.pBindings	= &binding;
 
-        VkResult res = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_descriptorSetLayout);
+        res = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_descriptorSetLayout);
         if(res != VK_SUCCESS){
             throw std::runtime_error("vkCreateDescriptorSetLayout failed: " + std::to_string(res));
         }
@@ -60,6 +130,23 @@ namespace vvppl {
         if(res != VK_SUCCESS){
             throw std::runtime_error("vkAllocateDescriptorSets failed: " + std::to_string(res));
         }
+
+        // welches konkrete Image gemeint ist und in welchem layout es beim Zugriff sein wird
+        VkDescriptorImageInfo imgInfo{};
+        imgInfo.imageView	= m_imageView;
+        imgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+        // schreibt das Image in Binding 0 des Sets
+        VkWriteDescriptorSet write{};
+        write.sType		= VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet	= m_descriptorSet;
+        write.dstBinding	= 0;
+        write.descriptorCount 	= 1;
+        write.descriptorType	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        write.pImageInfo		= &imgInfo;
+
+        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+        // std::cout << "descriptor ok\n";
 
 
         // ### compute pipeline
@@ -103,69 +190,107 @@ namespace vvppl {
         vkDestroyShaderModule(device, shaderModule, nullptr);
 
     }
-    
+
+
+
     PostProcessing::~PostProcessing(){
-        
         vkDestroyPipeline(m_device, m_pipeline, nullptr);
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
 
         vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
         vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
+
+        vkDestroyImageView(m_device, m_imageView, nullptr);
+        vkDestroyImage(m_device, m_image, nullptr);
+        vkFreeMemory(m_device, m_imageMemory, nullptr);
     }
 
-    void PostProcessing::apply(VkCommandBuffer cmd, VkImage image, VkImageView view){
-        // welches konkrete Image gemeint ist und in welchem layout es beim Zugriff sein wird
-        VkDescriptorImageInfo imgInfo{};
-        imgInfo.imageView	= view;
-        imgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-        // schreibt das Image in Binding 0 des Sets
-        VkWriteDescriptorSet write{};
-        write.sType		= VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet	= m_descriptorSet;
-        write.dstBinding	= 0;
-        write.descriptorCount 	= 1;
-        write.descriptorType	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        write.pImageInfo		= &imgInfo;
 
-        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
-        // std::cout << "descriptor ok\n";
+    void PostProcessing::apply(VkCommandBuffer cmd, VkImage src, VkImage dst){
 
-        // TODO bis hierher nur bis image nicht im vvppl
-
-        // kopiert
         VkImageSubresourceRange range{};
-        range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        range.aspectMask    = VK_IMAGE_ASPECT_COLOR_BIT;
         range.baseMipLevel = 0;
         range.levelCount = 1;
         range.baseArrayLayer = 0;
         range.layerCount = 1;
 
-        // der eigentliche teil von apply
-        // # vkCmdDispatch -> invertiertes .ppm
 
-        // der Clear hat per Transfer geschreiben, jetzt liest der Shader - das muss geordnet werden
-        VkImageMemoryBarrier toCompute {};
-        toCompute.sType		= VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        toCompute.oldLayout	= VK_IMAGE_LAYOUT_GENERAL;
-        toCompute.newLayout	= VK_IMAGE_LAYOUT_GENERAL;
-        toCompute.srcQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
-        toCompute.dstQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
-        toCompute.image		= image;
+        // eigenes Bild für den Blit vorbereiten, Inhalt wird ohnehin komplett überschrieben
+        VkImageMemoryBarrier toDst{};
+        toDst.sType                 = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toDst.oldLayout             = VK_IMAGE_LAYOUT_UNDEFINED;
+        toDst.newLayout             = VK_IMAGE_LAYOUT_GENERAL;
+        toDst.srcQueueFamilyIndex   = VK_QUEUE_FAMILY_IGNORED;
+        toDst.dstQueueFamilyIndex   = VK_QUEUE_FAMILY_IGNORED;
+        toDst.image                 = m_image;
+        toDst.srcAccessMask         = 0; // war noch kein zugriff darauf, kein cache(?)
+        toDst.dstAccessMask         = VK_ACCESS_TRANSFER_WRITE_BIT; // wird jetzt für transfer write verwendet
+        toDst.subresourceRange      = range;
+
+        // die Library weiss nicht, wer das Quellbild beschrieben hat - daher konservativ
+        VkImageMemoryBarrier srcReady{};
+        srcReady.sType                 = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        srcReady.oldLayout             = VK_IMAGE_LAYOUT_GENERAL;
+        srcReady.newLayout             = VK_IMAGE_LAYOUT_GENERAL;
+        srcReady.srcQueueFamilyIndex   = VK_QUEUE_FAMILY_IGNORED;
+        srcReady.dstQueueFamilyIndex   = VK_QUEUE_FAMILY_IGNORED;
+        srcReady.image                 = src;
+        // access mask: die gpu hat verschiedene caches
+        // man muss ihm sagen, in welchem cache er vorher gearbeitet hat
+        // , damit er weiß wo die neuesten daten liegen
+        // es kann nämlich sein, dass er die daten noch nicht in den vram geschrieben hat
+        srcReady.srcAccessMask         = VK_ACCESS_MEMORY_WRITE_BIT; // memory write = irgendwein write war davor
+        srcReady.dstAccessMask         = VK_ACCESS_TRANSFER_READ_BIT; // wird für transfer read verwendet
+        srcReady.subresourceRange      = range;
+
+        VkImageMemoryBarrier before [] = {toDst, srcReady};
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 
+            0, 0, nullptr, 0, nullptr, 2, before);
+
+
+        // quellbild ins eigene rgba16f-bild kopieren, der Blit konvertiert das Format
+        VkImageBlit blit{};
+        blit.srcSubresource.aspectMask      = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.srcSubresource.mipLevel        = 0;
+        blit.srcSubresource.baseArrayLayer  = 0;
+        blit.srcSubresource.layerCount      = 1;
+        blit.srcOffsets[0]                  = { 0, 0, 0};
+        blit.srcOffsets[1]                  = { (int32_t)m_width, (int32_t)m_height, 1};
+        blit.dstSubresource                 = blit.srcSubresource;
+        blit.dstOffsets[0]                  = blit.srcOffsets[0];
+        blit.dstOffsets[1]                  = blit.srcOffsets[1];
+
+        vkCmdBlitImage(cmd, src, VK_IMAGE_LAYOUT_GENERAL, m_image, VK_IMAGE_LAYOUT_GENERAL, 
+            1, &blit, VK_FILTER_NEAREST);
+
+
+        // blit fertig, jetzt darf der shader ran
+        VkImageMemoryBarrier toCompute = toDst;
+        toCompute.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
         toCompute.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        toCompute.dstAccessMask	= VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-        toCompute.subresourceRange	= range;
-
+        toCompute.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        0, 0, nullptr, 0, nullptr, 1, &toCompute);
+            0, 0, nullptr, 0, nullptr, 1, &toCompute);
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, nullptr);
-
-        // eine workgroup deckt 8x8 Pixel ab, also aufrunden
         vkCmdDispatch(cmd, (m_width + 7) / 8, (m_height + 7) / 8, 1);
+        
+        // Shader fertig, jetzt zurück ins zielbild
+        VkImageMemoryBarrier toRead = toCompute;
+        toRead.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        toRead.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
-        // std::cout << "dispatch ok\n";
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &toRead);
+        
+        // und bild wieder von lokal raus zum dst blitten
+        vkCmdBlitImage(cmd, m_image, VK_IMAGE_LAYOUT_GENERAL, dst, VK_IMAGE_LAYOUT_GENERAL,
+            1, &blit, VK_FILTER_NEAREST);
     }
 
 }
