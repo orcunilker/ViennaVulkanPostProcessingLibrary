@@ -1,5 +1,5 @@
 [[vk::binding(0,0)]]
-[[vk::image_format("rgba8")]]
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> image;
 
 [shader("compute")]

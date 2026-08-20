@@ -11,13 +11,17 @@ namespace vvppl {
 			~PostProcessing();
 
 			// zeichnet den Effekt in den Command Buffer des Aufrufers auf
-			void apply(VkCommandBuffer cmd, VkImage image, VkImageView view);
+			void apply(VkCommandBuffer cmd, VkImage src, VkImage dst);
 
 		private:
 			VkDevice m_device;
 			VkPhysicalDevice m_physicalDevice;
 			uint32_t	m_width;
 			uint32_t	m_height;
+
+			VkImage			m_image{VK_NULL_HANDLE};
+			VkDeviceMemory	m_imageMemory{VK_NULL_HANDLE};
+			VkImageView		m_imageView{VK_NULL_HANDLE};
 
 			VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
 			VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};

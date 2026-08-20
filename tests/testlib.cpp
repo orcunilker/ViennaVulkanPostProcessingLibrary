@@ -315,7 +315,7 @@ int main() {
 	vvppl::PostProcessing pp(device, physicalDevice, width, height);
 
 	VkCommandBuffer cmd4 = beginSingleTime(device, commandPool);
-	pp.apply(cmd4, image, imageView);
+	pp.apply(cmd4, image, image);
 	endSingleTime(device, commandPool, computeQueue, cmd4);
 	} // scope block, damit alles wieder destroyed wid von pp 
 		// bevor device usw destroyed werden
@@ -407,7 +407,7 @@ int main() {
 	std::cout << "ppm ok\n";
 
 
-	
+	// ### final destroy
 
 	vkDestroyBuffer(device, stagingBuffer, nullptr);
 	vkFreeMemory(device, stagingMemory, nullptr);
