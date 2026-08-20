@@ -199,6 +199,7 @@ int main() {
 	std::cout << "command buffer ok\n";
 
 
+
 	// ### vkImage + speicher + view
 
 	const uint32_t width = 256;
@@ -264,6 +265,7 @@ int main() {
 	std::cout << "image ok\n";
 
 
+
 	// ### Image Barrier nach General + vkCmdClearColorImage
 
 	VkCommandBuffer cmd2 = beginSingleTime(device, commandPool);
@@ -317,8 +319,7 @@ int main() {
 	VkCommandBuffer cmd4 = beginSingleTime(device, commandPool);
 	pp.apply(cmd4, image, image);
 	endSingleTime(device, commandPool, computeQueue, cmd4);
-	} // scope block, damit alles wieder destroyed wid von pp 
-		// bevor device usw destroyed werden
+	} // scope block, damit pp inhalt destroyed wird bevor device usw destroyed werden
 
 	
 
@@ -330,12 +331,13 @@ int main() {
 	bufferInfo.size		= width * height * 4;
 	bufferInfo.usage	= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
+	
 	VkBuffer stagingBuffer = VK_NULL_HANDLE;
 	res = vkCreateBuffer(device, &bufferInfo, nullptr, &stagingBuffer);
 	if (res != VK_SUCCESS) {
 		std::cerr << "vkCreateBuffer failed: " << res << "\n"; return 1;
 	}
+
 
 	// Memory für den Buffer erstellen
 	// dafür erst mal nachschauen was für memory requirments der Buffer hat
@@ -355,8 +357,10 @@ int main() {
 	// Memory an Buffer binden
 	vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
 
+
 	// command buffer erstellen und anfangen zu füllen
 	VkCommandBuffer cmd3 = beginSingleTime(device, commandPool);
+
 
 	// GENERAL -> TRANSFER_SRC_OPTIMAL, Image layout optimieren für aktion
 	VkImageMemoryBarrier toSrc{};
@@ -373,6 +377,7 @@ int main() {
 	vkCmdPipelineBarrier(cmd3, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0, 0, nullptr, 0, nullptr, 1 , &toSrc);
 	
+
 	// Image zum Buffer kopieren, damit wir es vom Host lesen können 
 	// (weil von der GRam kann man es nicht direkt lesen)
 	VkBufferImageCopy copy{}; // info glaub ich
@@ -388,8 +393,10 @@ int main() {
 
 	vkCmdCopyImageToBuffer(cmd3, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &copy);
 
+
 	// und jetzt flushen und den command buffer ausführen
 	endSingleTime(device, commandPool, computeQueue, cmd3);
+
 
 	// Speicher einblenden und als PPM rausschreiben
 	void* data = nullptr;
@@ -405,6 +412,7 @@ int main() {
 
 	vkUnmapMemory(device, stagingMemory);
 	std::cout << "ppm ok\n";
+
 
 
 	// ### final destroy

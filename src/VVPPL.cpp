@@ -79,8 +79,6 @@ namespace vvppl {
 	    // std::cout << "image ok\n";
 
 
-        // ### setup um pp pipeline zu erzeugen, durch die bei jedem apply(jeder frame)
-        // durchgegangen wird
 
         // ### descriptor set layout + pool + set, storage image einbinden
 
@@ -131,6 +129,7 @@ namespace vvppl {
             throw std::runtime_error("vkAllocateDescriptorSets failed: " + std::to_string(res));
         }
 
+
         // welches konkrete Image gemeint ist und in welchem layout es beim Zugriff sein wird
         VkDescriptorImageInfo imgInfo{};
         imgInfo.imageView	= m_imageView;
@@ -147,6 +146,7 @@ namespace vvppl {
 
         vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
         // std::cout << "descriptor ok\n";
+
 
 
         // ### compute pipeline
@@ -275,11 +275,13 @@ namespace vvppl {
         
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             0, 0, nullptr, 0, nullptr, 1, &toCompute);
-
+        
+        // bind und dispatch
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, nullptr);
-        vkCmdDispatch(cmd, (m_width + 7) / 8, (m_height + 7) / 8, 1);
+        vkCmdDispatch(cmd, (m_width + 7) / 8, (m_height + 7) / 8, 1); // dieses führt den shader aus
         
+
         // Shader fertig, jetzt zurück ins zielbild
         VkImageMemoryBarrier toRead = toCompute;
         toRead.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
