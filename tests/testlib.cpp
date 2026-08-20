@@ -5,8 +5,6 @@
 #include <iostream>
 #include <fstream>
 
-#include "invert_spv.h"
-
 // zeichnet einen Command Buffer fuer einmalige enutzung auf
 VkCommandBuffer beginSingleTime(VkDevice device, VkCommandPool pool) {
 	VkCommandBufferAllocateInfo allocInfo{};
@@ -311,153 +309,18 @@ int main() {
 	std::cout << "clear ok\n";
 
 
-	// ### descriptor set layout + pool + set, storage image einbinden
 
-	// beschreibt eine einzelne ressource binding 0, ein storage image, sichtbar im compute-shader
-	VkDescriptorSetLayoutBinding binding{};
-	binding.binding			= 0;
-	binding.descriptorType 	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	binding.descriptorCount	= 1;
-	binding.stageFlags		= VK_SHADER_STAGE_COMPUTE_BIT;
-
-	// das layout fasst alle bidnings zusammen - die form eiens descriptor sets
-	VkDescriptorSetLayoutCreateInfo layoutInfo {};
-	layoutInfo.sType		= VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount	= 1;
-	layoutInfo.pBindings	= &binding;
-
-	VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-	res = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout);
-	if(res != VK_SUCCESS){
-		std::cerr << "vkCreateDescriptorSetLayout failed: " << res << "\n";
-		return 1;
-	}
-
-	// wie viele descriptors welchen tryps des pool insegesamt vorhalten muss
-	VkDescriptorPoolSize poolSize{};
-	poolSize.type			= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	poolSize.descriptorCount = 1;
-
-	// der pool ist der Speicher, aus dem descroptor sets allozieert werden
-	VkDescriptorPoolCreateInfo descPoolInfo{};
-	descPoolInfo.sType		= VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	descPoolInfo.maxSets	= 1;
-	descPoolInfo.poolSizeCount	= 1;
-	descPoolInfo.pPoolSizes = &poolSize;
-
-	VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-	res = vkCreateDescriptorPool(device, &descPoolInfo, nullptr, &descriptorPool);
-	if(res != VK_SUCCESS){
-		std::cerr << "vkCreateDescriptorPool failed: " << res << "\n";
-		return 1;
-	}
-
-	// ein Set nach diesem layout aus dem pool holen
-	VkDescriptorSetAllocateInfo setAlloc{};
-	setAlloc.sType			= VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	setAlloc.descriptorPool	= descriptorPool;
-	setAlloc.descriptorSetCount	= 1;
-	setAlloc.pSetLayouts	= &descriptorSetLayout;
-
-	VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-	res = vkAllocateDescriptorSets(device, &setAlloc, &descriptorSet);
-	if(res != VK_SUCCESS){
-		std::cerr << "vkAllocateDescriptorSets failed: " << res << "\n";
-		return 1;
-	}
-
-	// welches konkrete Image gemeint ist und in welchem layout es beim Zugriff sein wird
-	VkDescriptorImageInfo imgInfo{};
-	imgInfo.imageView	= imageView;
-	imgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-	// schreibt das Image in Binding 0 des Sets
-	VkWriteDescriptorSet write{};
-	write.sType		= VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet	= descriptorSet;
-	write.dstBinding	= 0;
-	write.descriptorCount 	= 1;
-	write.descriptorType	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	write.pImageInfo		= &imgInfo;
-
-	vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
-	std::cout << "descriptor ok\n";
-
-
-	// ### compute pipeline + vkCmdDispatch -> invertiertes .ppm
-
-	VkShaderModuleCreateInfo shaderInfo{};
-	shaderInfo.sType	= VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	shaderInfo.codeSize	= invert_spv_sizeInBytes;
-	shaderInfo.pCode	= invert_spv;
-
-	VkShaderModule shaderModule = VK_NULL_HANDLE;
-	res = vkCreateShaderModule(device, &shaderInfo, nullptr, &shaderModule);
-	if(res != VK_SUCCESS){
-		std::cerr << "vkCreateShaderModule failed: " << res << "\n";
-		return 1;
-	}
-
-	// das Pipeline Layout sagt, welche Descriptor Sets die Pipeline erwartet
-	VkPipelineLayoutCreateInfo pipeLayoutInfo{};
-	pipeLayoutInfo.sType	= VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeLayoutInfo.setLayoutCount	= 1;
-	pipeLayoutInfo.pSetLayouts	= &descriptorSetLayout;
-
-	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-	res = vkCreatePipelineLayout(device, &pipeLayoutInfo, nullptr, &pipelineLayout);
-	if(res != VK_SUCCESS){
-		std::cerr << "vkCreatePipelineLayout failed: " << res << "\n";
-		return 1;
-	} 
-
-	// die Compute Pipeline besteht nur aus einem Shader und diesem Layout
-	VkComputePipelineCreateInfo pipeInfo{};
-	pipeInfo.sType		= VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-	pipeInfo.stage.sType 	= VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	pipeInfo.stage.stage	= VK_SHADER_STAGE_COMPUTE_BIT;
-	pipeInfo.stage.module	= shaderModule;
-	pipeInfo.stage.pName	= "main";
-	pipeInfo.layout			= pipelineLayout;
-
-	VkPipeline pipeline = VK_NULL_HANDLE;
-	res = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &pipeline);
-	if(res != VK_SUCCESS){
-		std::cerr << "vkCreateComputePipelines failed: " << res << "\n";
-		return 1;
-	}
-	// braucht man nicht mehr, pipeline hält shader code selbst
-	vkDestroyShaderModule(device, shaderModule, nullptr); 
-
-
-	// # Dispatch
+	// ### vvppl pp hier angewendet
+	{
+	vvppl::PostProcessing pp(device, physicalDevice, width, height);
 
 	VkCommandBuffer cmd4 = beginSingleTime(device, commandPool);
-
-	// der Clear hat per Transfer geschreiben, jetzt liest der Shader - das muss geordnet werden
-	VkImageMemoryBarrier toCompute {};
-	toCompute.sType		= VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	toCompute.oldLayout	= VK_IMAGE_LAYOUT_GENERAL;
-	toCompute.newLayout	= VK_IMAGE_LAYOUT_GENERAL;
-	toCompute.srcQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
-	toCompute.dstQueueFamilyIndex	= VK_QUEUE_FAMILY_IGNORED;
-	toCompute.image		= image;
-	toCompute.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	toCompute.dstAccessMask	= VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-	toCompute.subresourceRange	= range;
-
-	vkCmdPipelineBarrier(cmd4, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-	0, 0, nullptr, 0, nullptr, 1, &toCompute);
-
-	vkCmdBindPipeline(cmd4, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
-	vkCmdBindDescriptorSets(cmd4, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-
-	// eine workgroup deckt 8x8 Pixel ab, also aufrunden
-	vkCmdDispatch(cmd4, (width + 7) / 8, (height + 7) / 8, 1);
-
+	pp.apply(cmd4, image, imageView);
 	endSingleTime(device, commandPool, computeQueue, cmd4);
-	std::cout << "dispatch ok\n";
+	} // scope block, damit alles wieder destroyed wid von pp 
+		// bevor device usw destroyed werden
 
+	
 
 	// ### Image in Host-Buffer kopieren und als .ppm rausschreiben
 	
@@ -544,11 +407,7 @@ int main() {
 	std::cout << "ppm ok\n";
 
 
-	vkDestroyPipeline(device, pipeline, nullptr);
-	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-
-	vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-	vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+	
 
 	vkDestroyBuffer(device, stagingBuffer, nullptr);
 	vkFreeMemory(device, stagingMemory, nullptr);
