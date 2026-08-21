@@ -4,7 +4,7 @@
 #include <invert_spv.h>
 
 
-namespace {
+namespace { // anonymer namespace, damit es nur in diesem file sichtbar ist
     // kopiert aus testlib.cpp
     // sucht einen Speichertyp, der zu den Anforderungen passt
     uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -83,7 +83,6 @@ namespace vvppl {
         }
 
 
-
         // ### descriptor set layout + pool + set, storage image einbinden
 
         // beschreibt eine einzelne ressource binding 0, ein storage image, sichtbar im compute-shader
@@ -92,7 +91,6 @@ namespace vvppl {
         bindings[0].descriptorType 	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         bindings[0].descriptorCount	= 1;
         bindings[0].stageFlags		= VK_SHADER_STAGE_COMPUTE_BIT;
-
         bindings[1]                 = bindings[0];
         bindings[1].binding         = 1;
 
@@ -145,22 +143,20 @@ namespace vvppl {
         imgInfos[1].imageView	= m_imageViews[1];
         imgInfos[1].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-        // schreibt das Image in Binding 0 des Sets
+        // legt Binding 0 und 1 fest für shader fest
         VkWriteDescriptorSet writes[2]{};
         writes[0].sType		        = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[0].dstSet	        = m_descriptorSet;
-        writes[0].dstBinding	    = 0;
         writes[0].descriptorCount 	= 1;
         writes[0].descriptorType	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        writes[0].dstBinding	    = 0;
         writes[0].pImageInfo		= &imgInfos[0];
-
         writes[1]                   = writes[0];
         writes[1].dstBinding	    = 1;
         writes[1].pImageInfo		= &imgInfos[1];
 
         vkUpdateDescriptorSets(m_device, 2, writes, 0, nullptr);
         // std::cout << "descriptor ok\n";
-
 
 
         // ### compute pipeline
