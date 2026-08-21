@@ -19,9 +19,9 @@ namespace vvppl {
 			uint32_t	m_width;
 			uint32_t	m_height;
 
-			VkImage			m_image{VK_NULL_HANDLE};
-			VkDeviceMemory	m_imageMemory{VK_NULL_HANDLE};
-			VkImageView		m_imageView{VK_NULL_HANDLE};
+			VkImage			m_images[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+			VkDeviceMemory	m_imageMemorys[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+			VkImageView		m_imageViews[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
 
 			VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
 			VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
