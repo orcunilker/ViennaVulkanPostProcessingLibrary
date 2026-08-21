@@ -314,11 +314,14 @@ int main() {
 
 	// ### vvppl pp hier angewendet
 	{
-	vvppl::PostProcessing pp(device, physicalDevice, width, height);
+		vvppl::PostProcessing pp(device, physicalDevice, width, height);
+		pp.addInvert();
+		auto& greyscale = pp.addGreyscale();
+		greyscale.strength = 0.5f;
 
-	VkCommandBuffer cmd4 = beginSingleTime(device, commandPool);
-	pp.apply(cmd4, image, image);
-	endSingleTime(device, commandPool, computeQueue, cmd4);
+		VkCommandBuffer cmd4 = beginSingleTime(device, commandPool);
+		pp.apply(cmd4, image, image);
+		endSingleTime(device, commandPool, computeQueue, cmd4);
 	} // scope block, damit pp inhalt destroyed wird bevor device usw destroyed werden
 
 	
