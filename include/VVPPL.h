@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 #include <cstdint>
+#include <vector>
 
 namespace vvppl {
 
@@ -25,9 +26,9 @@ namespace vvppl {
 
 			VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
 			VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
-			VkDescriptorSet m_descriptorSet{VK_NULL_HANDLE};
+			VkDescriptorSet m_descriptorSets[2]{VK_NULL_HANDLE};
 			VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
-			VkPipeline m_pipeline{VK_NULL_HANDLE};
+			std::vector<VkPipeline> m_pipelines;
 	};
 
 }

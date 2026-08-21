@@ -2,9 +2,11 @@
 #include <stdexcept>
 #include <string>
 #include <invert_spv.h>
+#include <greyscale_spv.h>
 
 
 namespace { // anonymer namespace, damit es nur in diesem file sichtbar ist
+    
     // kopiert aus testlib.cpp
     // sucht einen Speichertyp, der zu den Anforderungen passt
     uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -18,6 +20,43 @@ namespace { // anonymer namespace, damit es nur in diesem file sichtbar ist
         }
         throw std::runtime_error("kein passender Speichertyp gefunden");
     }
+
+    VkPipeline createPipeline(VkDevice device, VkPipelineLayout layout, const uint32_t* code, size_t sizeInBytes){
+        
+        // ### compute pipeline
+
+        VkShaderModuleCreateInfo shaderInfo{};
+        shaderInfo.sType	= VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        shaderInfo.codeSize	= sizeInBytes;
+        shaderInfo.pCode	= code;
+
+        VkShaderModule shaderModule = VK_NULL_HANDLE;
+        VkResult res = vkCreateShaderModule(device, &shaderInfo, nullptr, &shaderModule);
+        if(res != VK_SUCCESS){
+            throw std::runtime_error("vkCreateShaderModule failed: " + std::to_string(res));
+        }
+
+        // die Compute Pipeline besteht nur aus einem Shader und diesem Layout
+        VkComputePipelineCreateInfo pipeInfo{};
+        pipeInfo.sType		= VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        pipeInfo.stage.sType 	= VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        pipeInfo.stage.stage	= VK_SHADER_STAGE_COMPUTE_BIT;
+        pipeInfo.stage.module	= shaderModule;
+        pipeInfo.stage.pName	= "main";
+        pipeInfo.layout			= layout;
+
+        VkPipeline pipeline{};
+        res = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &pipeline);
+        if(res != VK_SUCCESS){
+            throw std::runtime_error("vkCreateComputePipelines failed: " + std::to_string(res));
+        }
+        // braucht man nicht mehr, pipeline hält shader code selbst
+        vkDestroyShaderModule(device, shaderModule, nullptr);
+
+        return pipeline;
+    }
+
+
 }
 namespace vvppl {
 
@@ -108,12 +147,12 @@ namespace vvppl {
         // wie viele descriptors welchen tryps des pool insegesamt vorhalten muss
         VkDescriptorPoolSize poolSize{};
         poolSize.type			= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        poolSize.descriptorCount = 2;
+        poolSize.descriptorCount = 4;
 
         // der pool ist der Speicher, aus dem descroptor sets allozieert werden
         VkDescriptorPoolCreateInfo descPoolInfo{};
         descPoolInfo.sType		= VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        descPoolInfo.maxSets	= 1;
+        descPoolInfo.maxSets	= 2;
         descPoolInfo.poolSizeCount	= 1;
         descPoolInfo.pPoolSizes = &poolSize;
 
@@ -126,10 +165,12 @@ namespace vvppl {
         VkDescriptorSetAllocateInfo setAlloc{};
         setAlloc.sType			= VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         setAlloc.descriptorPool	= m_descriptorPool;
-        setAlloc.descriptorSetCount	= 1;
-        setAlloc.pSetLayouts	= &m_descriptorSetLayout;
+        setAlloc.descriptorSetCount	= 2;
+        // dadruch dass wir für jeden set ein layout übergeben müssen einfach zwei mal das gleiche in einem array
+        VkDescriptorSetLayout setLayouts[2] {m_descriptorSetLayout, m_descriptorSetLayout}; 
+        setAlloc.pSetLayouts	= setLayouts;
 
-        res = vkAllocateDescriptorSets(device, &setAlloc, &m_descriptorSet);
+        res = vkAllocateDescriptorSets(device, &setAlloc, m_descriptorSets);
         if(res != VK_SUCCESS){
             throw std::runtime_error("vkAllocateDescriptorSets failed: " + std::to_string(res));
         }
@@ -144,33 +185,34 @@ namespace vvppl {
         imgInfos[1].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
         // legt Binding 0 und 1 fest für shader fest
-        VkWriteDescriptorSet writes[2]{};
+        VkWriteDescriptorSet writes[4]{};
         writes[0].sType		        = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet	        = m_descriptorSet;
-        writes[0].descriptorCount 	= 1;
         writes[0].descriptorType	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].dstBinding	    = 0;
+        writes[0].descriptorCount 	= 1;
+        writes[0].dstSet	        = m_descriptorSets[0];
         writes[0].pImageInfo		= &imgInfos[0];
-        writes[1]                   = writes[0];
-        writes[1].dstBinding	    = 1;
-        writes[1].pImageInfo		= &imgInfos[1];
+        writes[0].dstBinding	    = 0;
 
-        vkUpdateDescriptorSets(m_device, 2, writes, 0, nullptr);
+        writes[1]                   = writes[0];
+        writes[1].dstSet	        = m_descriptorSets[0];
+        writes[1].pImageInfo		= &imgInfos[1];
+        writes[1].dstBinding	    = 1;
+
+        writes[2]                   = writes[0];
+        writes[2].dstSet	        = m_descriptorSets[1];
+        writes[2].pImageInfo		= &imgInfos[0];
+        writes[2].dstBinding	    = 1;
+
+        writes[3]                   = writes[0];
+        writes[3].dstSet	        = m_descriptorSets[1];
+        writes[3].pImageInfo		= &imgInfos[1];
+        writes[3].dstBinding	    = 0;
+
+        vkUpdateDescriptorSets(m_device, 4, writes, 0, nullptr);
         // std::cout << "descriptor ok\n";
 
 
-        // ### compute pipeline
-
-        VkShaderModuleCreateInfo shaderInfo{};
-        shaderInfo.sType	= VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        shaderInfo.codeSize	= invert_spv_sizeInBytes;
-        shaderInfo.pCode	= invert_spv;
-
-        VkShaderModule shaderModule = VK_NULL_HANDLE;
-        res = vkCreateShaderModule(device, &shaderInfo, nullptr, &shaderModule);
-        if(res != VK_SUCCESS){
-            throw std::runtime_error("vkCreateShaderModule failed: " + std::to_string(res));
-        }
+        // ## create Pipelines
 
         // das Pipeline Layout sagt, welche Descriptor Sets die Pipeline erwartet
         VkPipelineLayoutCreateInfo pipeLayoutInfo{};
@@ -181,30 +223,22 @@ namespace vvppl {
         res = vkCreatePipelineLayout(device, &pipeLayoutInfo, nullptr, &m_pipelineLayout);
         if(res != VK_SUCCESS){
             throw std::runtime_error("vkCreatePipelineLayout failed: " + std::to_string(res));
-        } 
-
-        // die Compute Pipeline besteht nur aus einem Shader und diesem Layout
-        VkComputePipelineCreateInfo pipeInfo{};
-        pipeInfo.sType		= VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-        pipeInfo.stage.sType 	= VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        pipeInfo.stage.stage	= VK_SHADER_STAGE_COMPUTE_BIT;
-        pipeInfo.stage.module	= shaderModule;
-        pipeInfo.stage.pName	= "main";
-        pipeInfo.layout			= m_pipelineLayout;
-
-        res = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &m_pipeline);
-        if(res != VK_SUCCESS){
-            throw std::runtime_error("vkCreateComputePipelines failed: " + std::to_string(res));
         }
-        // braucht man nicht mehr, pipeline hält shader code selbst
-        vkDestroyShaderModule(device, shaderModule, nullptr);
 
+        m_pipelines.push_back(createPipeline(device, m_pipelineLayout, 
+            invert_spv, invert_spv_sizeInBytes));
+        m_pipelines.push_back(createPipeline(device, m_pipelineLayout, 
+            greyscale_spv, greyscale_spv_sizeInBytes));
     }
 
 
 
     PostProcessing::~PostProcessing(){
-        vkDestroyPipeline(m_device, m_pipeline, nullptr);
+        for (int i = 0; i < m_pipelines.size(); i++)
+        {  
+            vkDestroyPipeline(m_device, m_pipelines[i], nullptr);
+        }
+
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
 
         vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
@@ -278,34 +312,45 @@ namespace vvppl {
         vkCmdBlitImage(cmd, src, VK_IMAGE_LAYOUT_GENERAL, m_images[0], VK_IMAGE_LAYOUT_GENERAL, 
             1, &blit, VK_FILTER_NEAREST);
 
-
         // blit fertig, jetzt darf der shader ran
-        // 2 weil image 0 zum lesen und image 1 zum schreiben bereit gemacht wird
-        VkImageMemoryBarrier dispatchBarrier[2];
-        dispatchBarrier[0]                = blitInBarrier;
-        dispatchBarrier[0].oldLayout      = VK_IMAGE_LAYOUT_GENERAL;
-        dispatchBarrier[0].newLayout      = VK_IMAGE_LAYOUT_GENERAL;
-        dispatchBarrier[0].srcAccessMask  = VK_ACCESS_TRANSFER_WRITE_BIT;
-        dispatchBarrier[0].dstAccessMask  = VK_ACCESS_SHADER_READ_BIT;
 
-        dispatchBarrier[1]                = blitInBarrier;
-        dispatchBarrier[1].image          = m_images[1];
-        dispatchBarrier[1].oldLayout      = VK_IMAGE_LAYOUT_UNDEFINED;
-        dispatchBarrier[1].newLayout      = VK_IMAGE_LAYOUT_GENERAL;
-        dispatchBarrier[1].srcAccessMask  = 0;
-        dispatchBarrier[1].dstAccessMask  = VK_ACCESS_SHADER_WRITE_BIT;
-        
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            0, 0, nullptr, 0, nullptr, 2, dispatchBarrier);
-        
-        // bind und dispatch
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, nullptr);
-        vkCmdDispatch(cmd, (m_width + 7) / 8, (m_height + 7) / 8, 1); // dieses führt den shader aus
-        
+        // TODO falls pipelines leer -> src zu dst blitten
+
+        // ## jeden shader/pipeline anwenden
+        // ping pong, immer von einen Image ins andere den nächsten shader/pipeline anwenden
+        VkImageMemoryBarrier dispatchBarrier[2];
+        for (size_t i = 0; i < m_pipelines.size(); i++)
+        {        
+            dispatchBarrier[0]                = blitInBarrier;
+            dispatchBarrier[0].image          = m_images[i % 2];
+            dispatchBarrier[0].oldLayout      = VK_IMAGE_LAYOUT_GENERAL;
+            dispatchBarrier[0].newLayout      = VK_IMAGE_LAYOUT_GENERAL;
+            dispatchBarrier[0].srcAccessMask  = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            dispatchBarrier[0].dstAccessMask  = VK_ACCESS_SHADER_READ_BIT;
+
+            dispatchBarrier[1]                = blitInBarrier;
+            dispatchBarrier[1].image          = m_images[(i+1) % 2];
+            dispatchBarrier[1].oldLayout      = VK_IMAGE_LAYOUT_UNDEFINED;
+            dispatchBarrier[1].newLayout      = VK_IMAGE_LAYOUT_GENERAL;
+            dispatchBarrier[1].srcAccessMask  = 0;
+            dispatchBarrier[1].dstAccessMask  = VK_ACCESS_SHADER_WRITE_BIT;
+            
+            vkCmdPipelineBarrier(cmd, 
+                VK_PIPELINE_STAGE_TRANSFER_BIT|VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                0, 0, nullptr, 0, nullptr, 2, dispatchBarrier);
+            
+            // bind und dispatch
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelines[i]);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 
+                0, 1, &m_descriptorSets[i % 2], 0, nullptr);
+            vkCmdDispatch(cmd, (m_width + 7) / 8, (m_height + 7) / 8, 1); // dieses führt den shader aus
+        }        
+        const size_t lastImage = m_pipelines.size() % 2;
 
         // Shader fertig, jetzt zurück ins zielbild
         VkImageMemoryBarrier blitOutBarrier = dispatchBarrier[1];
+        blitOutBarrier.image            = m_images[lastImage];
         blitOutBarrier.oldLayout        = VK_IMAGE_LAYOUT_GENERAL;
         blitOutBarrier.newLayout        = VK_IMAGE_LAYOUT_GENERAL;
         blitOutBarrier.srcAccessMask    = VK_ACCESS_SHADER_WRITE_BIT;
@@ -314,8 +359,8 @@ namespace vvppl {
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
             0, 0, nullptr, 0, nullptr, 1, &blitOutBarrier);
         
-        // und bild 1 wieder von lokal raus zum dst blitten
-        vkCmdBlitImage(cmd, m_images[1], VK_IMAGE_LAYOUT_GENERAL, dst, VK_IMAGE_LAYOUT_GENERAL,
+        // und das bild auf dem zuletzt gerendert wurde wieder von lokal raus zum dst blitten
+        vkCmdBlitImage(cmd, m_images[lastImage], VK_IMAGE_LAYOUT_GENERAL, dst, VK_IMAGE_LAYOUT_GENERAL,
             1, &blit, VK_FILTER_NEAREST);
     }
 
