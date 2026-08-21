@@ -214,29 +214,32 @@ namespace vvppl {
 
         // ## create Pipelines
 
+        // Push constants für parameter für shader
+        VkPushConstantRange pushRange{};
+        pushRange.stageFlags    = VK_SHADER_STAGE_COMPUTE_BIT;
+        pushRange.offset        = 0;
+        pushRange.size          = 128;
+
         // das Pipeline Layout sagt, welche Descriptor Sets die Pipeline erwartet
         VkPipelineLayoutCreateInfo pipeLayoutInfo{};
-        pipeLayoutInfo.sType	= VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipeLayoutInfo.setLayoutCount	= 1;
-        pipeLayoutInfo.pSetLayouts	= &m_descriptorSetLayout;
+        pipeLayoutInfo.sType	                = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipeLayoutInfo.setLayoutCount	        = 1;
+        pipeLayoutInfo.pSetLayouts	            = &m_descriptorSetLayout;
+        pipeLayoutInfo.pushConstantRangeCount   = 1;
+        pipeLayoutInfo.pPushConstantRanges      = &pushRange;
 
         res = vkCreatePipelineLayout(device, &pipeLayoutInfo, nullptr, &m_pipelineLayout);
         if(res != VK_SUCCESS){
             throw std::runtime_error("vkCreatePipelineLayout failed: " + std::to_string(res));
         }
-
-        m_pipelines.push_back(createPipeline(device, m_pipelineLayout, 
-            invert_spv, invert_spv_sizeInBytes));
-        m_pipelines.push_back(createPipeline(device, m_pipelineLayout, 
-            greyscale_spv, greyscale_spv_sizeInBytes));
     }
 
 
 
     PostProcessing::~PostProcessing(){
-        for (int i = 0; i < m_pipelines.size(); i++)
+        for (size_t i = 0; i < m_effects.size(); i++)
         {  
-            vkDestroyPipeline(m_device, m_pipelines[i], nullptr);
+            vkDestroyPipeline(m_device, m_effects[i].pipeline, nullptr);
         }
 
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
@@ -250,6 +253,26 @@ namespace vvppl {
             vkDestroyImage(m_device, m_images[i], nullptr);
             vkFreeMemory(m_device, m_imageMemorys[i], nullptr);
         }
+    }
+
+
+    
+    // add effects fncs
+    void PostProcessing::addInvert() {
+        m_effects.push_back({
+            createPipeline(m_device, m_pipelineLayout, invert_spv, invert_spv_sizeInBytes),
+            nullptr,
+            0
+        });
+    }
+
+    GreyscaleSettings& PostProcessing::addGreyscale() {
+        m_effects.push_back({
+            createPipeline(m_device, m_pipelineLayout, greyscale_spv, greyscale_spv_sizeInBytes),
+            &m_greyscaleSettings,
+            sizeof(GreyscaleSettings)
+        });
+        return m_greyscaleSettings;
     }
 
 
@@ -319,7 +342,7 @@ namespace vvppl {
         // ## jeden shader/pipeline anwenden
         // ping pong, immer von einen Image ins andere den nächsten shader/pipeline anwenden
         VkImageMemoryBarrier dispatchBarrier[2];
-        for (size_t i = 0; i < m_pipelines.size(); i++)
+        for (size_t i = 0; i < m_effects.size(); i++)
         {        
             dispatchBarrier[0]                = blitInBarrier;
             dispatchBarrier[0].image          = m_images[i % 2];
@@ -341,12 +364,17 @@ namespace vvppl {
                 0, 0, nullptr, 0, nullptr, 2, dispatchBarrier);
             
             // bind und dispatch
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelines[i]);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_effects[i].pipeline);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 
                 0, 1, &m_descriptorSets[i % 2], 0, nullptr);
+            // falls pushconstants für effect vorhanden
+            if(m_effects[i].paramSize > 0) {
+                vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                    0, m_effects[i].paramSize, m_effects[i].params);
+            }
             vkCmdDispatch(cmd, (m_width + 7) / 8, (m_height + 7) / 8, 1); // dieses führt den shader aus
         }        
-        const size_t lastImage = m_pipelines.size() % 2;
+        const size_t lastImage = m_effects.size() % 2;
 
         // Shader fertig, jetzt zurück ins zielbild
         VkImageMemoryBarrier blitOutBarrier = dispatchBarrier[1];
