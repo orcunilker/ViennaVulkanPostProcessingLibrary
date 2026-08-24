@@ -322,6 +322,18 @@ int main() {
 		greyscale.strength = 0.8f;
 		// Vignette
 		auto& vignette = pp.addVignette();
+		// FilmGrain
+		auto& filmgrain = pp.addFilmGrain();
+		filmgrain.intensity = 0.2;
+		filmgrain.time = 2346;
+		// Chromatic Abberation
+		auto& chromatic = pp.addChromatic();
+		chromatic.intensity = 0.03;
+		// Tonemap
+		auto& tonemap = pp.addTonemap();
+		tonemap.exposure = 0.9;
+
+
 		
 
 
