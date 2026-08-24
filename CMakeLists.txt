@@ -45,8 +45,20 @@ endforeach()
 
 
 add_library(vvppl src/VVPPL.cpp ${GENERATED_HEADERS})
+
+# Hosts wie die VVE laden Vulkan selbst per volk. In dem Fall teilt sich die
+# Library deren Funktionsueiger, statt zusätloich den Loader zu linken
+option(VVPPL_USE_VOLK "Use the host's volk-loaded functions pointers" OFF)
+
+if(VVPPL_USE_VOLK)
+  target_compile_definitions(vvppl PUBLIC VVPPL_USE_VOLK)
+  target_include_directories(vvppl PUBLIC $ENV{VULKAN_SDK}/include $ENV{VULKAN_SDK}/include/volk)
+else()
+  target_link_libraries(vvppl PUBLIC Vulkan::Vulkan)
+endif()
+
+
 target_include_directories(vvppl PUBLIC include PRIVATE ${GENERATED_DIR})
-target_link_libraries(vvppl PUBLIC Vulkan::Vulkan)
 target_compile_features(vvppl PUBLIC cxx_std_20)
 
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
