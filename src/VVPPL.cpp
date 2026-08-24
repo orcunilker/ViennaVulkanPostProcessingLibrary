@@ -3,6 +3,7 @@
 #include <string>
 #include <invert_spv.h>
 #include <greyscale_spv.h>
+#include <vignette_spv.h>
 
 
 namespace { // anonymer namespace, damit es nur in diesem file sichtbar ist
@@ -288,6 +289,14 @@ namespace vvppl {
         return m_greyscaleSettings;
     }
 
+    VignetteSettings& PostProcessing::addVignette() {
+        m_effects.push_back({
+            createPipeline(m_device, m_pipelineLayout, vignette_spv, vignette_spv_sizeInBytes),
+            &m_vignetteSettings,
+            sizeof(VignetteSettings)
+        });
+        return m_vignetteSettings;
+    }
 
 
     void PostProcessing::apply(VkCommandBuffer cmd, VkImage src, VkImage dst){

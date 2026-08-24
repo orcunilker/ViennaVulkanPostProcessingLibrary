@@ -9,6 +9,11 @@ namespace vvppl {
 	struct GreyscaleSettings	{
 		float strength{1.0f};
 	};
+	struct VignetteSettings {
+		float intensity{0.5};
+		float radius{0.4};
+		float smoothness{0.3};
+	};
 	
 	// This library is meant to be used by any Vulkan application (1.1 or higher). 
 	// It can apply several configurable Post Processing effects on a VkImage.
@@ -44,6 +49,7 @@ namespace vvppl {
 			void 				addInvert();
 			// Multiple instances share the same settings
 			GreyscaleSettings& 	addGreyscale();
+			VignetteSettings& 	addVignette();
 
 		private:
 			VkDevice m_device;
@@ -73,6 +79,7 @@ namespace vvppl {
 
 			std::vector<Effect>	m_effects;
 			GreyscaleSettings	m_greyscaleSettings;
+			VignetteSettings	m_vignetteSettings;
 	};
 
 }
