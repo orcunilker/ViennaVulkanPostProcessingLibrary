@@ -60,19 +60,19 @@ namespace { // anonymer namespace, damit es nur in diesem file sichtbar ist
 }
 namespace vvppl {
 
-
-	PostProcessing::PostProcessing(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height)
-        : m_device(device), m_physicalDevice(physicalDevice), m_width(width), m_height(height)
-    {
+    // createImages, destroyImages und writeDescriptorSets wurden in eine eigen Klasse gelegt, damit resize möglich ist
+    // da müssen nämlich bilder zerstört und wieder erstellt werden.
+    // writeDescriptorSets, benötigt man, damit die descriptorsets auf diese neuen Images geupdated werden
+    void PostProcessing::createImages(){
         VkResult res;
-        // ### images anlegen - in einer schleife
 
+        // ### images anlegen - in einer schleife
         for(int i = 0; i < 2; ++i){
             VkImageCreateInfo imageInfo{};
             imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
             imageInfo.imageType = VK_IMAGE_TYPE_2D;
             imageInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
-            imageInfo.extent = { width, height, 1 };
+            imageInfo.extent = { m_width, m_height, 1 };
             imageInfo.mipLevels = 1;
             imageInfo.arrayLayers = 1;
             imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -81,26 +81,26 @@ namespace vvppl {
             imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
             imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             
-            res = vkCreateImage(device, &imageInfo, nullptr, &m_images[i]);
+            res = vkCreateImage(m_device, &imageInfo, nullptr, &m_images[i]);
             if (res != VK_SUCCESS) {
                 throw std::runtime_error("vkCreateImage failed: " + std::to_string(res));
             }
 
             // vkCreateImage legt keinen Speicher an - den besorgen und binden wir selbst
             VkMemoryRequirements memReq{};
-            vkGetImageMemoryRequirements(device, m_images[i], &memReq);
+            vkGetImageMemoryRequirements(m_device, m_images[i], &memReq);
 
             VkMemoryAllocateInfo allocInfo{};
             allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
             allocInfo.allocationSize =  memReq.size;
-            allocInfo.memoryTypeIndex = findMemoryType(physicalDevice, memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            allocInfo.memoryTypeIndex = findMemoryType(m_physicalDevice, memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-            res = vkAllocateMemory(device, &allocInfo, nullptr, &m_imageMemorys[i]);
+            res = vkAllocateMemory(m_device, &allocInfo, nullptr, &m_imageMemorys[i]);
             if (res!=VK_SUCCESS) {
                 throw std::runtime_error("vkAllocateMemory failed: " + std::to_string(res));
             }
 
-            vkBindImageMemory(device, m_images[i], m_imageMemorys[i], 0);
+            vkBindImageMemory(m_device, m_images[i], m_imageMemorys[i], 0);
 
             // der View beschreibt, wie ein Shader auf das Image schaut
             VkImageViewCreateInfo viewInfo{};
@@ -114,13 +114,65 @@ namespace vvppl {
             viewInfo.subresourceRange.baseArrayLayer = 0;
             viewInfo.subresourceRange.layerCount = 1;
 
-            res = vkCreateImageView(device, &viewInfo, nullptr, &m_imageViews[i]);
+            res = vkCreateImageView(m_device, &viewInfo, nullptr, &m_imageViews[i]);
             if (res != VK_SUCCESS) {
                 throw std::runtime_error("vkCreateImageView failed: " + std::to_string(res));
             }
             // std::cout << "image ok\n";
         }
+    }
+    void PostProcessing::destroyImages(){
+        for (int i = 0; i < 2; i++)
+        {  
+            vkDestroyImageView(m_device, m_imageViews[i], nullptr);
+            vkDestroyImage(m_device, m_images[i], nullptr);
+            vkFreeMemory(m_device, m_imageMemorys[i], nullptr);
+        }
+    }
+    void PostProcessing::writeDescriptorSets(){
+        // welches konkrete Image gemeint ist und in welchem layout es beim Zugriff sein wird
+        VkDescriptorImageInfo imgInfos[2]{};
+        imgInfos[0].imageView	= m_imageViews[0];
+        imgInfos[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        
+        imgInfos[1].imageView	= m_imageViews[1];
+        imgInfos[1].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
+        // legt Binding 0 und 1 fest für shader fest
+        VkWriteDescriptorSet writes[4]{};
+        writes[0].sType		        = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].descriptorType	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        writes[0].descriptorCount 	= 1;
+        writes[0].dstSet	        = m_descriptorSets[0];
+        writes[0].pImageInfo		= &imgInfos[0];
+        writes[0].dstBinding	    = 0;
+
+        writes[1]                   = writes[0];
+        writes[1].dstSet	        = m_descriptorSets[0];
+        writes[1].pImageInfo		= &imgInfos[1];
+        writes[1].dstBinding	    = 1;
+
+        writes[2]                   = writes[0];
+        writes[2].dstSet	        = m_descriptorSets[1];
+        writes[2].pImageInfo		= &imgInfos[0];
+        writes[2].dstBinding	    = 1;
+
+        writes[3]                   = writes[0];
+        writes[3].dstSet	        = m_descriptorSets[1];
+        writes[3].pImageInfo		= &imgInfos[1];
+        writes[3].dstBinding	    = 0;
+
+        vkUpdateDescriptorSets(m_device, 4, writes, 0, nullptr);
+        // std::cout << "descriptor ok\n";
+    }
+
+    // Konstruktor
+	PostProcessing::PostProcessing(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height)
+        : m_device(device), m_physicalDevice(physicalDevice), m_width(width), m_height(height)
+    {
+        VkResult res;
+        
+        createImages();
 
         // ### descriptor set layout + pool + set, storage image einbinden
 
@@ -175,41 +227,7 @@ namespace vvppl {
             throw std::runtime_error("vkAllocateDescriptorSets failed: " + std::to_string(res));
         }
 
-
-        // welches konkrete Image gemeint ist und in welchem layout es beim Zugriff sein wird
-        VkDescriptorImageInfo imgInfos[2]{};
-        imgInfos[0].imageView	= m_imageViews[0];
-        imgInfos[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        
-        imgInfos[1].imageView	= m_imageViews[1];
-        imgInfos[1].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        // legt Binding 0 und 1 fest für shader fest
-        VkWriteDescriptorSet writes[4]{};
-        writes[0].sType		        = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].descriptorType	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].descriptorCount 	= 1;
-        writes[0].dstSet	        = m_descriptorSets[0];
-        writes[0].pImageInfo		= &imgInfos[0];
-        writes[0].dstBinding	    = 0;
-
-        writes[1]                   = writes[0];
-        writes[1].dstSet	        = m_descriptorSets[0];
-        writes[1].pImageInfo		= &imgInfos[1];
-        writes[1].dstBinding	    = 1;
-
-        writes[2]                   = writes[0];
-        writes[2].dstSet	        = m_descriptorSets[1];
-        writes[2].pImageInfo		= &imgInfos[0];
-        writes[2].dstBinding	    = 1;
-
-        writes[3]                   = writes[0];
-        writes[3].dstSet	        = m_descriptorSets[1];
-        writes[3].pImageInfo		= &imgInfos[1];
-        writes[3].dstBinding	    = 0;
-
-        vkUpdateDescriptorSets(m_device, 4, writes, 0, nullptr);
-        // std::cout << "descriptor ok\n";
+        writeDescriptorSets();
 
 
         // ## create Pipelines
@@ -247,12 +265,7 @@ namespace vvppl {
         vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
         vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
 
-        for (int i = 0; i < 2; i++)
-        {  
-            vkDestroyImageView(m_device, m_imageViews[i], nullptr);
-            vkDestroyImage(m_device, m_images[i], nullptr);
-            vkFreeMemory(m_device, m_imageMemorys[i], nullptr);
-        }
+        destroyImages();
     }
 
 
@@ -390,6 +403,14 @@ namespace vvppl {
         // und das bild auf dem zuletzt gerendert wurde wieder von lokal raus zum dst blitten
         vkCmdBlitImage(cmd, m_images[lastImage], VK_IMAGE_LAYOUT_GENERAL, dst, VK_IMAGE_LAYOUT_GENERAL,
             1, &blit, VK_FILTER_NEAREST);
+    }
+
+    void PostProcessing::resize(uint32_t width, uint32_t height) {
+        destroyImages();
+        m_width = width;
+        m_height = height;
+        createImages();
+        writeDescriptorSets();
     }
 
 }

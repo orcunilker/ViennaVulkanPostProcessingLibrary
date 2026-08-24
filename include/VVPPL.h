@@ -22,6 +22,7 @@ namespace vvppl {
 
 			// zeichnet den Effekt in den Command Buffer des Aufrufers auf
 			void apply(VkCommandBuffer cmd, VkImage src, VkImage dst);
+			void resize(uint32_t width, uint32_t height);
 
 			// add effect
 			void 				addInvert();
