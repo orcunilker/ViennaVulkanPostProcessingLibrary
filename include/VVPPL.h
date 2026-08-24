@@ -6,13 +6,23 @@
 
 namespace vvppl {
 
-	struct GreyscaleSettings	{
+	struct GreyscaleSettings {
 		float strength{1.0f};
 	};
 	struct VignetteSettings {
 		float intensity{0.5};
 		float radius{0.4};
 		float smoothness{0.3};
+	};	
+	struct FilmGrainSettings {
+		float intensity{0.08f};
+		float time{0.0f};
+	};
+	struct ChromaticSettings {
+		float intensity{0.005f};
+	};
+	struct TonemapSettings {
+		float exposure{1.0f};
 	};
 	
 	// This library is meant to be used by any Vulkan application (1.1 or higher). 
@@ -50,6 +60,9 @@ namespace vvppl {
 			// Multiple instances share the same settings
 			GreyscaleSettings& 	addGreyscale();
 			VignetteSettings& 	addVignette();
+			FilmGrainSettings& 	addFilmGrain();
+			ChromaticSettings& addChromatic();
+			TonemapSettings& 	addTonemap();
 
 		private:
 			VkDevice m_device;
@@ -80,6 +93,9 @@ namespace vvppl {
 			std::vector<Effect>	m_effects;
 			GreyscaleSettings	m_greyscaleSettings;
 			VignetteSettings	m_vignetteSettings;
+			FilmGrainSettings	m_filmGrainSettings;
+			ChromaticSettings	m_chromaticSettings;
+			TonemapSettings 	m_tonemapSettings;
 	};
 
 }

@@ -4,6 +4,9 @@
 #include <invert_spv.h>
 #include <greyscale_spv.h>
 #include <vignette_spv.h>
+#include <filmgrain_spv.h>
+#include <chromatic_spv.h>
+#include <tonemap_spv.h>
 
 
 namespace { // anonymer namespace, damit es nur in diesem file sichtbar ist
@@ -297,6 +300,33 @@ namespace vvppl {
         });
         return m_vignetteSettings;
     }
+
+	FilmGrainSettings& PostProcessing::addFilmGrain() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, filmgrain_spv, filmgrain_spv_sizeInBytes),
+			&m_filmGrainSettings,
+			sizeof(FilmGrainSettings)
+		});
+		return m_filmGrainSettings;
+	}
+
+	ChromaticSettings& PostProcessing::addChromatic() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, chromatic_spv, chromatic_spv_sizeInBytes),
+			&m_chromaticSettings,
+			sizeof(ChromaticSettings)
+		});
+		return m_chromaticSettings;
+	}
+
+	TonemapSettings& PostProcessing::addTonemap() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, tonemap_spv, tonemap_spv_sizeInBytes),
+			&m_tonemapSettings,
+			sizeof(TonemapSettings)
+		});
+		return m_tonemapSettings;
+	}
 
 
     void PostProcessing::apply(VkCommandBuffer cmd, VkImage src, VkImage dst){
