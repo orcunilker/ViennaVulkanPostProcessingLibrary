@@ -10,22 +10,39 @@ namespace vvppl {
 		float strength{1.0f};
 	};
 	
-
+	// This library is meant to be used by any Vulkan application (1.1 or higher). 
+	// It can apply several configurable Post Processing effects on a VkImage.
+	// The command buffer, source, and destination-image are provided by the host
 	class PostProcessing {
 		public:
 			PostProcessing(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height);
 			~PostProcessing();
 
 			// API Guide - nicht kopierbar machen
+			// Copying is prohibited, as the instances hold raw Vulkan handles
+			// Destroying one is affecting the other, destroying both is problematic
 			PostProcessing(const PostProcessing&) 				= delete;
 			PostProcessing& operator=(const PostProcessing&)	= delete;
 
-			// zeichnet den Effekt in den Command Buffer des Aufrufers auf
+			// Applies the configured Post Processing Effect on the image
+			// cmd is provided by the host
+			// src and dst must:
+			// - have the configured size (resize() if needed)
+			// - be in VK_IMAGE_LAYOUT_GENERAL, and 
+			// - src needs VK_IMAGE_USAGE_TRANSFER_SRC_BIT, dst needs VK_IMAGE_USAGE_TRANSFER_DST_BIT 
+			// - src and dst can be the same image
+			// - the call has to be outside of a render pass
+			// The effects are applied in the same order they were added
 			void apply(VkCommandBuffer cmd, VkImage src, VkImage dst);
+
+			// Recreates the internal images in the new size
+			// The caller must ensure the GPU is no longer using hte old images
+			// e.g. via vkDeviceWaitIdle or by waiting on the frame's fence.
 			void resize(uint32_t width, uint32_t height);
 
 			// add effect
 			void 				addInvert();
+			// Multiple instances share the same settings
 			GreyscaleSettings& 	addGreyscale();
 
 		private:
@@ -43,6 +60,9 @@ namespace vvppl {
 			VkDescriptorSet m_descriptorSets[2]{VK_NULL_HANDLE};
 			VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
 
+			void createImages();
+			void destroyImages();
+			void writeDescriptorSets();
 
 			// ein Effekt: eine Pipeline plus ein Zeiger auf seine Parameter
 			struct Effect {
