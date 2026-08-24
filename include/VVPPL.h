@@ -1,6 +1,11 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#ifdef VVPPL_USE_VOLK
+	#include <volk.h>
+#else
+	#include <vulkan/vulkan.h>
+#endif
+
 #include <cstdint>
 #include <vector>
 
