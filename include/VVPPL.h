@@ -35,7 +35,7 @@ namespace vvppl {
 	// The command buffer, source, and destination-image are provided by the host
 	class PostProcessing {
 		public:
-			PostProcessing(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height);
+			PostProcessing(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, uint32_t framesInFlight = 1);
 			~PostProcessing();
 
 			// API Guide - nicht kopierbar machen
@@ -53,7 +53,7 @@ namespace vvppl {
 			// - src and dst can be the same image
 			// - the call has to be outside of a render pass
 			// The effects are applied in the same order they were added
-			void apply(VkCommandBuffer cmd, VkImage src, VkImage dst);
+			void apply(VkCommandBuffer cmd, VkImage src, VkImage dst, uint32_t frameIndex = 0);
 
 			// Recreates the internal images in the new size
 			// The caller must ensure the GPU is no longer using hte old images
@@ -74,14 +74,15 @@ namespace vvppl {
 			VkPhysicalDevice m_physicalDevice;
 			uint32_t	m_width;
 			uint32_t	m_height;
+			uint32_t	m_framesInFlight{1};
 
-			VkImage			m_images[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-			VkDeviceMemory	m_imageMemorys[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
-			VkImageView		m_imageViews[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+			std::vector<VkImage>			m_images;
+			std::vector<VkDeviceMemory>	m_imageMemorys;
+			std::vector<VkImageView>		m_imageViews;
 
 			VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
 			VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
-			VkDescriptorSet m_descriptorSets[2]{VK_NULL_HANDLE};
+			std::vector<VkDescriptorSet> m_descriptorSets;
 			VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
 
 			void createImages();

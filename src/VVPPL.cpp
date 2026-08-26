@@ -70,8 +70,14 @@ namespace vvppl {
     void PostProcessing::createImages(){
         VkResult res;
 
+        // so viele images wie anlegen wie 2(pingpong) * framesinflight(vom host)
+        const uint32_t imageCount = 2 * m_framesInFlight;
+        m_images.resize(imageCount);
+        m_imageMemorys.resize(imageCount);
+        m_imageViews.resize(imageCount);
+
         // ### images anlegen - in einer schleife
-        for(int i = 0; i < 2; ++i){
+        for(int i = 0; i < imageCount; ++i){
             VkImageCreateInfo imageInfo{};
             imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
             imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -126,7 +132,7 @@ namespace vvppl {
         }
     }
     void PostProcessing::destroyImages(){
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < m_images.size(); i++)
         {  
             vkDestroyImageView(m_device, m_imageViews[i], nullptr);
             vkDestroyImage(m_device, m_images[i], nullptr);
@@ -134,45 +140,44 @@ namespace vvppl {
         }
     }
     void PostProcessing::writeDescriptorSets(){
+        const uint32_t imageCount = 2 * m_framesInFlight;
+
         // welches konkrete Image gemeint ist und in welchem layout es beim Zugriff sein wird
-        VkDescriptorImageInfo imgInfos[2]{};
-        imgInfos[0].imageView	= m_imageViews[0];
-        imgInfos[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        
-        imgInfos[1].imageView	= m_imageViews[1];
-        imgInfos[1].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        std::vector<VkDescriptorImageInfo> imgInfos(imageCount);
+		for (uint32_t i = 0; i < imageCount; ++i) {
+			imgInfos[i].imageView   = m_imageViews[i];
+			imgInfos[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		}
 
         // legt Binding 0 und 1 fest für shader fest
-        VkWriteDescriptorSet writes[4]{};
-        writes[0].sType		        = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].descriptorType	= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].descriptorCount 	= 1;
-        writes[0].dstSet	        = m_descriptorSets[0];
-        writes[0].pImageInfo		= &imgInfos[0];
-        writes[0].dstBinding	    = 0;
+        std::vector<VkWriteDescriptorSet> writes(2 * imageCount);
+        for (uint32_t i = 0; i < m_framesInFlight; ++i) {
+            const uint32_t base = i * 2;
+			for (uint32_t j = 0; j < 2; ++j) {
+				VkWriteDescriptorSet w{};
+				w.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				w.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+				w.descriptorCount = 1;
+				w.dstSet          = m_descriptorSets[base + j];
 
-        writes[1]                   = writes[0];
-        writes[1].dstSet	        = m_descriptorSets[0];
-        writes[1].pImageInfo		= &imgInfos[1];
-        writes[1].dstBinding	    = 1;
+				// Set base+0 liest Bild base+0 und schreibt base+1, Set base+1 umgekehrt
+				w.dstBinding = 0;
+				w.pImageInfo = &imgInfos[base + j];
+				writes[(base + j) *2] = w;
 
-        writes[2]                   = writes[0];
-        writes[2].dstSet	        = m_descriptorSets[1];
-        writes[2].pImageInfo		= &imgInfos[0];
-        writes[2].dstBinding	    = 1;
+				w.dstBinding = 1;
+				w.pImageInfo = &imgInfos[base + (1 - j)];
+				writes[(base + j) *2 + 1] = w;
+			}
+        }
 
-        writes[3]                   = writes[0];
-        writes[3].dstSet	        = m_descriptorSets[1];
-        writes[3].pImageInfo		= &imgInfos[1];
-        writes[3].dstBinding	    = 0;
-
-        vkUpdateDescriptorSets(m_device, 4, writes, 0, nullptr);
+        vkUpdateDescriptorSets(m_device, writes.size(), writes.data(), 0, nullptr);
         // std::cout << "descriptor ok\n";
     }
 
     // Konstruktor
-	PostProcessing::PostProcessing(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height)
-        : m_device(device), m_physicalDevice(physicalDevice), m_width(width), m_height(height)
+	PostProcessing::PostProcessing(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, uint32_t framesInFlight)
+        : m_device(device), m_physicalDevice(physicalDevice), m_width(width), m_height(height), m_framesInFlight(framesInFlight)
     {
         VkResult res;
         
@@ -203,12 +208,12 @@ namespace vvppl {
         // wie viele descriptors welchen tryps des pool insegesamt vorhalten muss
         VkDescriptorPoolSize poolSize{};
         poolSize.type			= VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        poolSize.descriptorCount = 4;
+        poolSize.descriptorCount = 4 * framesInFlight; // 4 descriptors for 2 ping pong images
 
         // der pool ist der Speicher, aus dem descroptor sets allozieert werden
         VkDescriptorPoolCreateInfo descPoolInfo{};
         descPoolInfo.sType		= VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        descPoolInfo.maxSets	= 2;
+        descPoolInfo.maxSets	= 2  * framesInFlight;
         descPoolInfo.poolSizeCount	= 1;
         descPoolInfo.pPoolSizes = &poolSize;
 
@@ -218,15 +223,17 @@ namespace vvppl {
         }
 
         // ein Set nach diesem layout aus dem pool holen
-        VkDescriptorSetAllocateInfo setAlloc{};
-        setAlloc.sType			= VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        setAlloc.descriptorPool	= m_descriptorPool;
-        setAlloc.descriptorSetCount	= 2;
-        // dadruch dass wir für jeden set ein layout übergeben müssen einfach zwei mal das gleiche in einem array
-        VkDescriptorSetLayout setLayouts[2] {m_descriptorSetLayout, m_descriptorSetLayout}; 
-        setAlloc.pSetLayouts	= setLayouts;
+        m_descriptorSets.resize(2 * framesInFlight);
 
-        res = vkAllocateDescriptorSets(device, &setAlloc, m_descriptorSets);
+        VkDescriptorSetAllocateInfo setAlloc{};
+        setAlloc.sType			    = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        setAlloc.descriptorPool	    = m_descriptorPool;
+        setAlloc.descriptorSetCount	= m_descriptorSets.size();
+        // dadruch dass wir für jeden set ein layout übergeben müssen
+        std::vector<VkDescriptorSetLayout> setLayouts(m_descriptorSets.size(), m_descriptorSetLayout);
+        setAlloc.pSetLayouts	    = setLayouts.data();
+
+        res = vkAllocateDescriptorSets(device, &setAlloc, m_descriptorSets.data());
         if(res != VK_SUCCESS){
             throw std::runtime_error("vkAllocateDescriptorSets failed: " + std::to_string(res));
         }
@@ -329,7 +336,10 @@ namespace vvppl {
 	}
 
 
-    void PostProcessing::apply(VkCommandBuffer cmd, VkImage src, VkImage dst){
+    void PostProcessing::apply(VkCommandBuffer cmd, VkImage src, VkImage dst, uint32_t frameIndex){
+        
+        // base für die 2er ping pong sets, welche es framesInFlight mal gibt
+        const size_t base = 2 * frameIndex; 
 
         VkImageSubresourceRange range{};
         range.aspectMask    = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -345,7 +355,7 @@ namespace vvppl {
         blitInBarrier.newLayout             = VK_IMAGE_LAYOUT_GENERAL;
         blitInBarrier.srcQueueFamilyIndex   = VK_QUEUE_FAMILY_IGNORED;
         blitInBarrier.dstQueueFamilyIndex   = VK_QUEUE_FAMILY_IGNORED;
-        blitInBarrier.image                 = m_images[0];
+        blitInBarrier.image                 = m_images[base];
         blitInBarrier.srcAccessMask         = 0; // war noch kein zugriff darauf, kein cache(?)
         blitInBarrier.dstAccessMask         = VK_ACCESS_TRANSFER_WRITE_BIT; // wird jetzt für transfer write verwendet
         blitInBarrier.subresourceRange      = range;
@@ -384,7 +394,7 @@ namespace vvppl {
         blit.dstOffsets[0]                  = blit.srcOffsets[0];
         blit.dstOffsets[1]                  = blit.srcOffsets[1];
 
-        vkCmdBlitImage(cmd, src, VK_IMAGE_LAYOUT_GENERAL, m_images[0], VK_IMAGE_LAYOUT_GENERAL, 
+        vkCmdBlitImage(cmd, src, VK_IMAGE_LAYOUT_GENERAL, m_images[base], VK_IMAGE_LAYOUT_GENERAL, 
             1, &blit, VK_FILTER_NEAREST);
 
         // blit fertig, jetzt darf der shader ran
@@ -397,14 +407,14 @@ namespace vvppl {
         for (size_t i = 0; i < m_effects.size(); i++)
         {        
             dispatchBarrier[0]                = blitInBarrier;
-            dispatchBarrier[0].image          = m_images[i % 2];
+            dispatchBarrier[0].image          = m_images[base + (i % 2)];
             dispatchBarrier[0].oldLayout      = VK_IMAGE_LAYOUT_GENERAL;
             dispatchBarrier[0].newLayout      = VK_IMAGE_LAYOUT_GENERAL;
             dispatchBarrier[0].srcAccessMask  = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT;
             dispatchBarrier[0].dstAccessMask  = VK_ACCESS_SHADER_READ_BIT;
 
             dispatchBarrier[1]                = blitInBarrier;
-            dispatchBarrier[1].image          = m_images[(i+1) % 2];
+            dispatchBarrier[1].image          = m_images[base + ((i+1) % 2)];
             dispatchBarrier[1].oldLayout      = VK_IMAGE_LAYOUT_UNDEFINED;
             dispatchBarrier[1].newLayout      = VK_IMAGE_LAYOUT_GENERAL;
             dispatchBarrier[1].srcAccessMask  = 0;
@@ -418,7 +428,7 @@ namespace vvppl {
             // bind und dispatch
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_effects[i].pipeline);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 
-                0, 1, &m_descriptorSets[i % 2], 0, nullptr);
+                0, 1, &m_descriptorSets[base + (i % 2)], 0, nullptr);
             // falls pushconstants für effect vorhanden
             if(m_effects[i].paramSize > 0) {
                 vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
@@ -426,7 +436,7 @@ namespace vvppl {
             }
             vkCmdDispatch(cmd, (m_width + 7) / 8, (m_height + 7) / 8, 1); // dieses führt den shader aus
         }        
-        const size_t lastImage = m_effects.size() % 2;
+        const size_t lastImage = base + (m_effects.size() % 2);
 
         // Shader fertig, jetzt zurück ins zielbild
         VkImageMemoryBarrier blitOutBarrier = dispatchBarrier[1];
