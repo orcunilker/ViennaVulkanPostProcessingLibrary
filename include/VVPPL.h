@@ -52,8 +52,9 @@ namespace vvppl {
 			// - src needs VK_IMAGE_USAGE_TRANSFER_SRC_BIT, dst needs VK_IMAGE_USAGE_TRANSFER_DST_BIT 
 			// - src and dst can be the same image
 			// - the call has to be outside of a render pass
+			// frameInFlight Image Index (of the Vulkan Application)
 			// The effects are applied in the same order they were added
-			void apply(VkCommandBuffer cmd, VkImage src, VkImage dst, uint32_t frameIndex = 0);
+			void apply(VkCommandBuffer cmd, VkImage src, VkImage dst, uint32_t fifIndex = 0);
 
 			// Recreates the internal images in the new size
 			// The caller must ensure the GPU is no longer using hte old images

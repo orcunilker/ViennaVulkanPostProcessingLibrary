@@ -336,10 +336,10 @@ namespace vvppl {
 	}
 
 
-    void PostProcessing::apply(VkCommandBuffer cmd, VkImage src, VkImage dst, uint32_t frameIndex){
+    void PostProcessing::apply(VkCommandBuffer cmd, VkImage src, VkImage dst, uint32_t fifIndex){
         
         // base für die 2er ping pong sets, welche es framesInFlight mal gibt
-        const size_t base = 2 * frameIndex; 
+        const size_t base = 2 * fifIndex; 
 
         VkImageSubresourceRange range{};
         range.aspectMask    = VK_IMAGE_ASPECT_COLOR_BIT;
