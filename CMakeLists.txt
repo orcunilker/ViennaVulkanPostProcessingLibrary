@@ -1,5 +1,5 @@
 
-cmake_minimum_required (VERSION 3.5.0)
+cmake_minimum_required (VERSION 3.15) # 3.15 für VVE V3
 project (
   "ViennaVulkanPostProcessingLibrary"
   VERSION 1.0
