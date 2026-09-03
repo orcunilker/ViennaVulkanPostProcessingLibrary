@@ -403,7 +403,7 @@ namespace vvppl {
 
         // ## jeden shader/pipeline anwenden
         // ping pong, immer von einen Image ins andere den nächsten shader/pipeline anwenden
-        VkImageMemoryBarrier dispatchBarrier[2];
+        VkImageMemoryBarrier dispatchBarrier[2]{};
         for (size_t i = 0; i < m_effects.size(); i++)
         {        
             dispatchBarrier[0]                = blitInBarrier;
@@ -439,14 +439,15 @@ namespace vvppl {
         const size_t lastImage = base + (m_effects.size() % 2);
 
         // Shader fertig, jetzt zurück ins zielbild
-        VkImageMemoryBarrier blitOutBarrier = dispatchBarrier[1];
+        VkImageMemoryBarrier blitOutBarrier = blitInBarrier;
         blitOutBarrier.image            = m_images[lastImage];
         blitOutBarrier.oldLayout        = VK_IMAGE_LAYOUT_GENERAL;
         blitOutBarrier.newLayout        = VK_IMAGE_LAYOUT_GENERAL;
-        blitOutBarrier.srcAccessMask    = VK_ACCESS_SHADER_WRITE_BIT;
+        blitOutBarrier.srcAccessMask    = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
         blitOutBarrier.dstAccessMask    = VK_ACCESS_TRANSFER_READ_BIT;
 
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+             VK_PIPELINE_STAGE_TRANSFER_BIT,
             0, 0, nullptr, 0, nullptr, 1, &blitOutBarrier);
         
         // und das bild auf dem zuletzt gerendert wurde wieder von lokal raus zum dst blitten
