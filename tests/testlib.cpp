@@ -345,6 +345,8 @@ int main() {
 		// colorgrade.gain[0] = 1.0F;
 		// colorgrade.gain[1] = 0.8F;
 		// colorgrade.gain[2] = 1.0F;
+		// Dithering
+		auto& dither = pp.addDither();
 
 
 

@@ -8,6 +8,7 @@
 #include <chromatic_spv.h>
 #include <tonemap_spv.h>
 #include <colorgrade_spv.h>
+#include <dither_spv.h>
 
 
 namespace { // anonymer namespace, damit es nur in diesem file sichtbar ist
@@ -343,6 +344,15 @@ namespace vvppl {
 			sizeof(ColorGradeSettings)
 		});
 		return m_colorGradeSettings;
+	}
+
+	DitherSettings& PostProcessing::addDither() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, dither_spv, dither_spv_sizeInBytes),
+			&m_ditherSettings,
+			sizeof(DitherSettings)
+		});
+		return m_ditherSettings;
 	}
 
 

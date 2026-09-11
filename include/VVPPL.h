@@ -36,6 +36,9 @@ namespace vvppl {
 		float gamma[3]{1.0f, 1.0f, 1.0f};
 		float gain[3]{1.0f, 1.0f, 1.0f};
 	};
+	struct DitherSettings { 
+		float strength{1.0f}; 
+	};
 	
 	// This library is meant to be used by any Vulkan application (1.1 or higher). 
 	// It can apply several configurable Post Processing effects on a VkImage.
@@ -77,6 +80,7 @@ namespace vvppl {
 			ChromaticSettings& 	addChromatic();
 			TonemapSettings& 	addTonemap();
 			ColorGradeSettings& addColorGrade();
+			DitherSettings& 	addDither();
 
 		private:
 			VkDevice m_device;
@@ -112,6 +116,7 @@ namespace vvppl {
 			ChromaticSettings	m_chromaticSettings;
 			TonemapSettings 	m_tonemapSettings;
 			ColorGradeSettings 	m_colorGradeSettings;
+			DitherSettings		m_ditherSettings;
 	};
 
 }
