@@ -29,6 +29,13 @@ namespace vvppl {
 	struct TonemapSettings {
 		float exposure{1.0f};
 	};
+	struct ColorGradeSettings {
+		float saturation{1.0f};
+		float contrast{1.0f};
+		float lift[3]{0.0f, 0.0f, 0.0f};
+		float gamma[3]{1.0f, 1.0f, 1.0f};
+		float gain[3]{1.0f, 1.0f, 1.0f};
+	};
 	
 	// This library is meant to be used by any Vulkan application (1.1 or higher). 
 	// It can apply several configurable Post Processing effects on a VkImage.
@@ -67,8 +74,9 @@ namespace vvppl {
 			GreyscaleSettings& 	addGreyscale();
 			VignetteSettings& 	addVignette();
 			FilmGrainSettings& 	addFilmGrain();
-			ChromaticSettings& addChromatic();
+			ChromaticSettings& 	addChromatic();
 			TonemapSettings& 	addTonemap();
+			ColorGradeSettings& addColorGrade();
 
 		private:
 			VkDevice m_device;
@@ -103,6 +111,7 @@ namespace vvppl {
 			FilmGrainSettings	m_filmGrainSettings;
 			ChromaticSettings	m_chromaticSettings;
 			TonemapSettings 	m_tonemapSettings;
+			ColorGradeSettings 	m_colorGradeSettings;
 	};
 
 }

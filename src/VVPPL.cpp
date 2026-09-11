@@ -7,6 +7,7 @@
 #include <filmgrain_spv.h>
 #include <chromatic_spv.h>
 #include <tonemap_spv.h>
+#include <colorgrade_spv.h>
 
 
 namespace { // anonymer namespace, damit es nur in diesem file sichtbar ist
@@ -333,6 +334,15 @@ namespace vvppl {
 			sizeof(TonemapSettings)
 		});
 		return m_tonemapSettings;
+	}
+
+	ColorGradeSettings& PostProcessing::addColorGrade() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, colorgrade_spv, colorgrade_spv_sizeInBytes),
+			&m_colorGradeSettings,
+			sizeof(ColorGradeSettings)
+		});
+		return m_colorGradeSettings;
 	}
 
 

@@ -332,9 +332,19 @@ int main() {
 		// Tonemap
 		auto& tonemap = pp.addTonemap();
 		tonemap.exposure = 0.9;
-
-
-		
+		// ColorGrade
+		auto& colorgrade = pp.addColorGrade();
+		colorgrade.saturation = 1.5F;
+		// colorgrade.contrast = 1.0F;
+		// colorgrade.lift[0] = 0.0F;
+		// colorgrade.lift[1] = 0.0F;
+		// colorgrade.lift[2] = 1.0F;
+		// colorgrade.gamma[0] = 1.0F;
+		// colorgrade.gamma[1] = 0.5F;
+		// colorgrade.gamma[2] = 1.0F;
+		// colorgrade.gain[0] = 1.0F;
+		// colorgrade.gain[1] = 0.8F;
+		// colorgrade.gain[2] = 1.0F;
 
 
 

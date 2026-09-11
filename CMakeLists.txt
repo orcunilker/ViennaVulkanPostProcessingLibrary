@@ -27,7 +27,7 @@ find_program(SLANGC slangc HINTS $ENV{VULKAN_SDK}/bin REQUIRED)
 
 # schleife für mehrere 
 # uebersetzt invert.slang nach SPIR-V und bettet es als uint32-Array ein
-set(SHADERS invert greyscale vignette filmgrain chromatic tonemap)
+set(SHADERS invert greyscale vignette filmgrain chromatic tonemap colorgrade)
 set(GENERATED_HEADERS "")
 foreach(SHADER ${SHADERS})
   add_custom_command(
