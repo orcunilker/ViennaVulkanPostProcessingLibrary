@@ -140,6 +140,9 @@ namespace vvppl {
             vkDestroyImage(m_device, m_images[i], nullptr);
             vkFreeMemory(m_device, m_imageMemorys[i], nullptr);
         }
+        m_imageViews.clear();
+        m_images.clear();
+        m_imageMemorys.clear();
     }
     void PostProcessing::writeDescriptorSets(){
         const uint32_t imageCount = 2 * m_framesInFlight;
