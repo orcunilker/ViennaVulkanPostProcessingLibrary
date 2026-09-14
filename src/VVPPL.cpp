@@ -9,6 +9,13 @@
 #include <tonemap_spv.h>
 #include <colorgrade_spv.h>
 #include <dither_spv.h>
+#include <solarize_spv.h>
+#include <sabattier_spv.h>
+#include <emboss_spv.h>
+#include <sobel_spv.h>
+#include <speedlines_spv.h>
+#include <highlight_spv.h>
+#include <segmentation_spv.h>
 
 
 namespace { // anonymer namespace, damit es nur in diesem file sichtbar ist
@@ -356,6 +363,69 @@ namespace vvppl {
 			sizeof(DitherSettings)
 		});
 		return m_ditherSettings;
+	}
+
+	SolarizeSettings& PostProcessing::addSolarize() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, solarize_spv, solarize_spv_sizeInBytes),
+			&m_solarizeSettings,
+			sizeof(SolarizeSettings)
+		});
+		return m_solarizeSettings;
+	}
+
+	SabattierSettings& PostProcessing::addSabattier() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, sabattier_spv, sabattier_spv_sizeInBytes),
+			&m_sabattierSettings,
+			sizeof(SabattierSettings)
+		});
+		return m_sabattierSettings;
+	}
+
+	EmbossSettings& PostProcessing::addEmboss() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, emboss_spv, emboss_spv_sizeInBytes),
+			&m_embossSettings,
+			sizeof(EmbossSettings)
+		});
+		return m_embossSettings;
+	}
+
+	SobelSettings& PostProcessing::addSobel() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, sobel_spv, sobel_spv_sizeInBytes),
+			&m_sobelSettings,
+			sizeof(SobelSettings)
+		});
+		return m_sobelSettings;
+	}
+
+	SpeedLinesSettings& PostProcessing::addSpeedLines() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, speedlines_spv, speedlines_spv_sizeInBytes),
+			&m_speedLinesSettings,
+			sizeof(SpeedLinesSettings)
+		});
+		return m_speedLinesSettings;
+	}
+
+	HighlightSettings& PostProcessing::addHighlight() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, highlight_spv, highlight_spv_sizeInBytes),
+			&m_highlightSettings,
+			sizeof(HighlightSettings)
+		});
+		return m_highlightSettings;
+	}
+
+	SegmentationSettings& PostProcessing::addSegmentation() {
+		m_effects.push_back({
+			createPipeline(m_device, m_pipelineLayout, segmentation_spv, segmentation_spv_sizeInBytes),
+			&m_segmentationSettings,
+			sizeof(SegmentationSettings)
+		});
+		return m_segmentationSettings;
 	}
 
 

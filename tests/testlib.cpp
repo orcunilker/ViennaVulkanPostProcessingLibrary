@@ -345,6 +345,23 @@ int main() {
 		// colorgrade.gain[0] = 1.0F;
 		// colorgrade.gain[1] = 0.8F;
 		// colorgrade.gain[2] = 1.0F;
+		// Solarize
+		auto& solarize = pp.addSolarize();
+		// Sabattier
+		auto& sabattier = pp.addSabattier();
+		// Emboss
+		auto& emboss = pp.addEmboss();
+		// Sobel
+		auto& sobel = pp.addSobel();
+		sobel.strength = 0.3F;
+		// Speed Lines
+		auto& speedlines = pp.addSpeedLines();
+		speedlines.time = 2346;
+		// Highlight
+		auto& highlight = pp.addHighlight();
+		// Segmentation
+		auto& segmentation = pp.addSegmentation();
+		segmentation.strength = 0.5F;
 		// Dithering
 		auto& dither = pp.addDither();
 

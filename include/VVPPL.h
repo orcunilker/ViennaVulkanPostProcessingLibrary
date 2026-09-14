@@ -36,8 +36,37 @@ namespace vvppl {
 		float gamma[3]{1.0f, 1.0f, 1.0f};
 		float gain[3]{1.0f, 1.0f, 1.0f};
 	};
-	struct DitherSettings { 
-		float strength{1.0f}; 
+	struct DitherSettings {
+		float strength{1.0f};
+	};
+	struct SolarizeSettings {
+		float threshold{0.5f};
+	};
+	struct SabattierSettings {
+		float threshold{0.5f};
+		float strength{0.75f};
+	};
+	struct EmbossSettings {
+		float strength{1.0f};
+	};
+	struct SobelSettings {
+		float strength{1.0f};
+	};
+	struct SpeedLinesSettings {
+		float intensity{0.5f};
+		float lineCount{60.0f};
+		float radius{0.25f};
+		float time{0.0f};
+	};
+	struct HighlightSettings {
+		float key[3]{1.0f, 0.0f, 0.0f};
+		float tolerance{0.1f};
+		float strength{1.0f};
+	};
+	struct SegmentationSettings {
+		float segments{6.0f};
+		float minChroma{0.05f};
+		float strength{1.0f};
 	};
 	
 	// This library is meant to be used by any Vulkan application (1.1 or higher). 
@@ -81,6 +110,13 @@ namespace vvppl {
 			TonemapSettings& 	addTonemap();
 			ColorGradeSettings& addColorGrade();
 			DitherSettings& 	addDither();
+			SolarizeSettings& 	addSolarize();
+			SabattierSettings& 	addSabattier();
+			EmbossSettings& 	addEmboss();
+			SobelSettings& 		addSobel();
+			SpeedLinesSettings& addSpeedLines();
+			HighlightSettings& 	addHighlight();
+			SegmentationSettings& addSegmentation();
 
 		private:
 			VkDevice m_device;
@@ -117,6 +153,13 @@ namespace vvppl {
 			TonemapSettings 	m_tonemapSettings;
 			ColorGradeSettings 	m_colorGradeSettings;
 			DitherSettings		m_ditherSettings;
+			SolarizeSettings	m_solarizeSettings;
+			SabattierSettings	m_sabattierSettings;
+			EmbossSettings		m_embossSettings;
+			SobelSettings		m_sobelSettings;
+			SpeedLinesSettings	m_speedLinesSettings;
+			HighlightSettings	m_highlightSettings;
+			SegmentationSettings m_segmentationSettings;
 	};
 
 }
