@@ -15,27 +15,37 @@ VkCommandBuffer beginSingleTime(VkDevice device, VkCommandPool pool) {
 	allocInfo.commandBufferCount = 1;
 
 	VkCommandBuffer cmd = VK_NULL_HANDLE;
-	vkAllocateCommandBuffers(device, &allocInfo, &cmd);
+	if (vkAllocateCommandBuffers(device, &allocInfo, &cmd) != VK_SUCCESS) {
+		throw std::runtime_error("vkAllocateCommandBuffers failed");
+	}
 
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	vkBeginCommandBuffer(cmd, &beginInfo);
+	if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+		throw std::runtime_error("vkBeginCommandBuffer failed");
+	}
 
 	return cmd;
 }
 
 // beendet, schickt ab und wartet, bis die GPU fertig ist
 void endSingleTime(VkDevice device, VkCommandPool pool, VkQueue queue, VkCommandBuffer cmd) {
-	vkEndCommandBuffer(cmd);
+	if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+		throw std::runtime_error("vkEndCommandBuffer failed");
+	}
 
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &cmd;
 
-	vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-	vkQueueWaitIdle(queue);
+	if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+		throw std::runtime_error("vkQueueSubmit failed");
+	}
+	if (vkQueueWaitIdle(queue) != VK_SUCCESS) {
+		throw std::runtime_error("vkQueueWaitIdle failed");
+	}
 
 	vkFreeCommandBuffers(device, pool, 1, &cmd);
 }
@@ -87,7 +97,9 @@ VkImage createImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t w
 	if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS) {
 		throw std::runtime_error("vkAllocateMemory failed");
 	}
-	vkBindImageMemory(device, image, memory, 0);
+	if (vkBindImageMemory(device, image, memory, 0) != VK_SUCCESS) {
+		throw std::runtime_error("vkBindImageMemory failed");
+	}
 	return image;
 }
 
@@ -308,7 +320,7 @@ int main(int argc, char* argv[]) {
 		0, 0, nullptr, 0, nullptr, 2, barriers);
 
 	// jetzt darf geschrieben werden
-	// einfarbiger Benchmark
+	// the source keeps a single color for the whole benchmark
 	VkClearColorValue clearColor{};
 	clearColor.float32[0] = 0.8f;
 	clearColor.float32[1] = 0.5f;
