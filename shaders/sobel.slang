@@ -31,6 +31,9 @@ void main(uint3 id: SV_DispatchThreadID) {
 
     if (id.x >= width || id.y >= height) return;
 
+    // Keep the input texture in scope before entering the loops.
+    float4 color = inImage[id.xy];
+
     int2 size = int2(width, height);
 
     // both kernels over the luminance of the 3x3 neighborhood, neighbors outside the image are clamped to the border
@@ -49,7 +52,6 @@ void main(uint3 id: SV_DispatchThreadID) {
     float edge = sqrt(gx * gx + gy * gy);
 
     // strength blends between the original (0) and the white-on-black edge image (1)
-    float4 color = inImage[id.xy];
     color.rgb = lerp(color.rgb, float3(edge), params.strength);
     outImage[id.xy] = color;
 }

@@ -26,6 +26,9 @@ void main(uint3 id: SV_DispatchThreadID) {
 
     if (id.x >= width || id.y >= height) return;
 
+    // Keep the input texture in scope before entering the loops.
+    float4 color = inImage[id.xy];
+
     int2 size = int2(width, height);
 
     // weighted sum over the 3x3 neighborhood, neighbors outside the image are clamped to the border
@@ -38,7 +41,6 @@ void main(uint3 id: SV_DispatchThreadID) {
     }
 
     // strength blends between the original (0) and the embossed image (1)
-    float4 color = inImage[id.xy];
     color.rgb = lerp(color.rgb, max(sum, 0.0), params.strength);
     outImage[id.xy] = color;
 }
