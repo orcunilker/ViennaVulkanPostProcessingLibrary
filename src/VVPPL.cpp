@@ -278,9 +278,10 @@ namespace vvppl {
 
 
     PostProcessing::~PostProcessing(){
-        for (size_t i = 0; i < m_effects.size(); i++)
-        {  
-            vkDestroyPipeline(m_device, m_effects[i].pipeline, nullptr);
+        // also the pipelines of removed effects, never created ones are VK_NULL_HANDLE and ignored
+        for (size_t i = 0; i < EFFECT_TYPE_COUNT; i++)
+        {
+            vkDestroyPipeline(m_device, m_pipelines[i], nullptr);
         }
 
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
@@ -293,140 +294,127 @@ namespace vvppl {
 
 
     
-    // add effects fncs
-    void PostProcessing::addInvert() {
-        m_effects.push_back({
-            createPipeline(m_device, m_pipelineLayout, invert_spv, invert_spv_sizeInBytes),
-            nullptr,
-            0
-        });
+    // inserts an effect at its fixed place in the chain, every effect is in the chain at most once
+    void PostProcessing::addEffect(EffectType type, const uint32_t* code, size_t sizeInBytes, const void* params, uint32_t paramSize) {
+        // the pipeline stays until the destructor, so removing an effect never destroys
+        // a pipeline that an already recorded command buffer still uses
+        if (m_pipelines[type] == VK_NULL_HANDLE) {
+            m_pipelines[type] = createPipeline(m_device, m_pipelineLayout, code, sizeInBytes);
+        }
+
+        // skip all effects that come before this one
+        size_t i = 0;
+        while (i < m_effects.size() && m_effects[i].type < type) {
+            i++;
+        }
+
+        // already in the chain
+        if (i < m_effects.size() && m_effects[i].type == type) {
+            return;
+        }
+
+        m_effects.insert(m_effects.begin() + i, Effect{type, m_pipelines[type], params, paramSize});
     }
 
-    GreyscaleSettings& PostProcessing::addGreyscale() {
-        m_effects.push_back({
-            createPipeline(m_device, m_pipelineLayout, greyscale_spv, greyscale_spv_sizeInBytes),
-            &m_greyscaleSettings,
-            sizeof(GreyscaleSettings)
-        });
-        return m_greyscaleSettings;
+    // takes an effect out of the chain, its settings and pipeline stay for a later add
+    void PostProcessing::removeEffect(EffectType type) {
+        for (size_t i = 0; i < m_effects.size(); i++) {
+            if (m_effects[i].type == type) {
+                m_effects.erase(m_effects.begin() + i);
+                return;
+            }
+        }
     }
+
+    // add and remove effects, in the order of the chain
+    ChromaticSettings& PostProcessing::addChromatic() {
+        addEffect(EFFECT_CHROMATIC, chromatic_spv, chromatic_spv_sizeInBytes, &m_chromaticSettings, sizeof(ChromaticSettings));
+        return m_chromaticSettings;
+    }
+    void PostProcessing::removeChromatic() { removeEffect(EFFECT_CHROMATIC); }
 
     VignetteSettings& PostProcessing::addVignette() {
-        m_effects.push_back({
-            createPipeline(m_device, m_pipelineLayout, vignette_spv, vignette_spv_sizeInBytes),
-            &m_vignetteSettings,
-            sizeof(VignetteSettings)
-        });
+        addEffect(EFFECT_VIGNETTE, vignette_spv, vignette_spv_sizeInBytes, &m_vignetteSettings, sizeof(VignetteSettings));
         return m_vignetteSettings;
     }
+    void PostProcessing::removeVignette() { removeEffect(EFFECT_VIGNETTE); }
 
-	FilmGrainSettings& PostProcessing::addFilmGrain() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, filmgrain_spv, filmgrain_spv_sizeInBytes),
-			&m_filmGrainSettings,
-			sizeof(FilmGrainSettings)
-		});
-		return m_filmGrainSettings;
-	}
+    TonemapSettings& PostProcessing::addTonemap() {
+        addEffect(EFFECT_TONEMAP, tonemap_spv, tonemap_spv_sizeInBytes, &m_tonemapSettings, sizeof(TonemapSettings));
+        return m_tonemapSettings;
+    }
+    void PostProcessing::removeTonemap() { removeEffect(EFFECT_TONEMAP); }
 
-	ChromaticSettings& PostProcessing::addChromatic() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, chromatic_spv, chromatic_spv_sizeInBytes),
-			&m_chromaticSettings,
-			sizeof(ChromaticSettings)
-		});
-		return m_chromaticSettings;
-	}
+    ColorGradeSettings& PostProcessing::addColorGrade() {
+        addEffect(EFFECT_COLOR_GRADE, colorgrade_spv, colorgrade_spv_sizeInBytes, &m_colorGradeSettings, sizeof(ColorGradeSettings));
+        return m_colorGradeSettings;
+    }
+    void PostProcessing::removeColorGrade() { removeEffect(EFFECT_COLOR_GRADE); }
 
-	TonemapSettings& PostProcessing::addTonemap() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, tonemap_spv, tonemap_spv_sizeInBytes),
-			&m_tonemapSettings,
-			sizeof(TonemapSettings)
-		});
-		return m_tonemapSettings;
-	}
+    SegmentationSettings& PostProcessing::addSegmentation() {
+        addEffect(EFFECT_SEGMENTATION, segmentation_spv, segmentation_spv_sizeInBytes, &m_segmentationSettings, sizeof(SegmentationSettings));
+        return m_segmentationSettings;
+    }
+    void PostProcessing::removeSegmentation() { removeEffect(EFFECT_SEGMENTATION); }
 
-	ColorGradeSettings& PostProcessing::addColorGrade() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, colorgrade_spv, colorgrade_spv_sizeInBytes),
-			&m_colorGradeSettings,
-			sizeof(ColorGradeSettings)
-		});
-		return m_colorGradeSettings;
-	}
+    HighlightSettings& PostProcessing::addHighlight() {
+        addEffect(EFFECT_HIGHLIGHT, highlight_spv, highlight_spv_sizeInBytes, &m_highlightSettings, sizeof(HighlightSettings));
+        return m_highlightSettings;
+    }
+    void PostProcessing::removeHighlight() { removeEffect(EFFECT_HIGHLIGHT); }
 
-	DitherSettings& PostProcessing::addDither() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, dither_spv, dither_spv_sizeInBytes),
-			&m_ditherSettings,
-			sizeof(DitherSettings)
-		});
-		return m_ditherSettings;
-	}
+    GreyscaleSettings& PostProcessing::addGreyscale() {
+        addEffect(EFFECT_GREYSCALE, greyscale_spv, greyscale_spv_sizeInBytes, &m_greyscaleSettings, sizeof(GreyscaleSettings));
+        return m_greyscaleSettings;
+    }
+    void PostProcessing::removeGreyscale() { removeEffect(EFFECT_GREYSCALE); }
 
-	SolarizeSettings& PostProcessing::addSolarize() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, solarize_spv, solarize_spv_sizeInBytes),
-			&m_solarizeSettings,
-			sizeof(SolarizeSettings)
-		});
-		return m_solarizeSettings;
-	}
+    void PostProcessing::addInvert() {
+        addEffect(EFFECT_INVERT, invert_spv, invert_spv_sizeInBytes, nullptr, 0);
+    }
+    void PostProcessing::removeInvert() { removeEffect(EFFECT_INVERT); }
 
-	SabattierSettings& PostProcessing::addSabattier() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, sabattier_spv, sabattier_spv_sizeInBytes),
-			&m_sabattierSettings,
-			sizeof(SabattierSettings)
-		});
-		return m_sabattierSettings;
-	}
+    SolarizeSettings& PostProcessing::addSolarize() {
+        addEffect(EFFECT_SOLARIZE, solarize_spv, solarize_spv_sizeInBytes, &m_solarizeSettings, sizeof(SolarizeSettings));
+        return m_solarizeSettings;
+    }
+    void PostProcessing::removeSolarize() { removeEffect(EFFECT_SOLARIZE); }
 
-	EmbossSettings& PostProcessing::addEmboss() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, emboss_spv, emboss_spv_sizeInBytes),
-			&m_embossSettings,
-			sizeof(EmbossSettings)
-		});
-		return m_embossSettings;
-	}
+    SabattierSettings& PostProcessing::addSabattier() {
+        addEffect(EFFECT_SABATTIER, sabattier_spv, sabattier_spv_sizeInBytes, &m_sabattierSettings, sizeof(SabattierSettings));
+        return m_sabattierSettings;
+    }
+    void PostProcessing::removeSabattier() { removeEffect(EFFECT_SABATTIER); }
 
-	SobelSettings& PostProcessing::addSobel() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, sobel_spv, sobel_spv_sizeInBytes),
-			&m_sobelSettings,
-			sizeof(SobelSettings)
-		});
-		return m_sobelSettings;
-	}
+    EmbossSettings& PostProcessing::addEmboss() {
+        addEffect(EFFECT_EMBOSS, emboss_spv, emboss_spv_sizeInBytes, &m_embossSettings, sizeof(EmbossSettings));
+        return m_embossSettings;
+    }
+    void PostProcessing::removeEmboss() { removeEffect(EFFECT_EMBOSS); }
 
-	SpeedLinesSettings& PostProcessing::addSpeedLines() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, speedlines_spv, speedlines_spv_sizeInBytes),
-			&m_speedLinesSettings,
-			sizeof(SpeedLinesSettings)
-		});
-		return m_speedLinesSettings;
-	}
+    SobelSettings& PostProcessing::addSobel() {
+        addEffect(EFFECT_SOBEL, sobel_spv, sobel_spv_sizeInBytes, &m_sobelSettings, sizeof(SobelSettings));
+        return m_sobelSettings;
+    }
+    void PostProcessing::removeSobel() { removeEffect(EFFECT_SOBEL); }
 
-	HighlightSettings& PostProcessing::addHighlight() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, highlight_spv, highlight_spv_sizeInBytes),
-			&m_highlightSettings,
-			sizeof(HighlightSettings)
-		});
-		return m_highlightSettings;
-	}
+    SpeedLinesSettings& PostProcessing::addSpeedLines() {
+        addEffect(EFFECT_SPEED_LINES, speedlines_spv, speedlines_spv_sizeInBytes, &m_speedLinesSettings, sizeof(SpeedLinesSettings));
+        return m_speedLinesSettings;
+    }
+    void PostProcessing::removeSpeedLines() { removeEffect(EFFECT_SPEED_LINES); }
 
-	SegmentationSettings& PostProcessing::addSegmentation() {
-		m_effects.push_back({
-			createPipeline(m_device, m_pipelineLayout, segmentation_spv, segmentation_spv_sizeInBytes),
-			&m_segmentationSettings,
-			sizeof(SegmentationSettings)
-		});
-		return m_segmentationSettings;
-	}
+    FilmGrainSettings& PostProcessing::addFilmGrain() {
+        addEffect(EFFECT_FILM_GRAIN, filmgrain_spv, filmgrain_spv_sizeInBytes, &m_filmGrainSettings, sizeof(FilmGrainSettings));
+        return m_filmGrainSettings;
+    }
+    void PostProcessing::removeFilmGrain() { removeEffect(EFFECT_FILM_GRAIN); }
+
+    DitherSettings& PostProcessing::addDither() {
+        addEffect(EFFECT_DITHER, dither_spv, dither_spv_sizeInBytes, &m_ditherSettings, sizeof(DitherSettings));
+        return m_ditherSettings;
+    }
+    void PostProcessing::removeDither() { removeEffect(EFFECT_DITHER); }
 
 
     void PostProcessing::apply(VkCommandBuffer cmd, VkImage src, VkImage dst, uint32_t fifIndex){

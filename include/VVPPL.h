@@ -92,7 +92,7 @@ namespace vvppl {
 			// - src and dst can be the same image
 			// - the call has to be outside of a render pass
 			// frameInFlight Image Index (of the Vulkan Application)
-			// The effects are applied in the same order they were added
+			// The effects are applied in the fixed order of the add/remove list below
 			void apply(VkCommandBuffer cmd, VkImage src, VkImage dst, uint32_t fifIndex = 0);
 
 			// Recreates the internal images in the new size
@@ -100,23 +100,43 @@ namespace vvppl {
 			// e.g. via vkDeviceWaitIdle or by waiting on the frame's fence.
 			void resize(uint32_t width, uint32_t height);
 
-			// add effect
-			void 				addInvert();
-			// Multiple instances share the same settings
-			GreyscaleSettings& 	addGreyscale();
-			VignetteSettings& 	addVignette();
-			FilmGrainSettings& 	addFilmGrain();
+			// add and remove effects
+			// The chain is always applied in the order of this list, no matter in which order effects are added:
+			// lens effects on the HDR image, tone mapping, color correction, effects that read the hue,
+			// effects that discard or reverse colors, neighborhood effects, overlay, noise, dithering last.
+			// Every effect is in the chain at most once, adding it again only returns its settings.
+			// Removing keeps the settings and the pipeline, so a removed effect can be added again cheaply.
+			// Both are allowed between two apply() calls, also while recorded command buffers are in flight.
 			ChromaticSettings& 	addChromatic();
+			void 				removeChromatic();
+			VignetteSettings& 	addVignette();
+			void 				removeVignette();
 			TonemapSettings& 	addTonemap();
+			void 				removeTonemap();
 			ColorGradeSettings& addColorGrade();
-			DitherSettings& 	addDither();
-			SolarizeSettings& 	addSolarize();
-			SabattierSettings& 	addSabattier();
-			EmbossSettings& 	addEmboss();
-			SobelSettings& 		addSobel();
-			SpeedLinesSettings& addSpeedLines();
-			HighlightSettings& 	addHighlight();
+			void 				removeColorGrade();
 			SegmentationSettings& addSegmentation();
+			void 				removeSegmentation();
+			HighlightSettings& 	addHighlight();
+			void 				removeHighlight();
+			GreyscaleSettings& 	addGreyscale();
+			void 				removeGreyscale();
+			void 				addInvert();
+			void 				removeInvert();
+			SolarizeSettings& 	addSolarize();
+			void 				removeSolarize();
+			SabattierSettings& 	addSabattier();
+			void 				removeSabattier();
+			EmbossSettings& 	addEmboss();
+			void 				removeEmboss();
+			SobelSettings& 		addSobel();
+			void 				removeSobel();
+			SpeedLinesSettings& addSpeedLines();
+			void 				removeSpeedLines();
+			FilmGrainSettings& 	addFilmGrain();
+			void 				removeFilmGrain();
+			DitherSettings& 	addDither();
+			void 				removeDither();
 
 		private:
 			VkDevice m_device;
@@ -138,14 +158,41 @@ namespace vvppl {
 			void destroyImages();
 			void writeDescriptorSets();
 
+			// the fixed place of every effect in the chain, same order as the add/remove list above
+			enum EffectType : uint32_t {
+				EFFECT_CHROMATIC,
+				EFFECT_VIGNETTE,
+				EFFECT_TONEMAP,
+				EFFECT_COLOR_GRADE,
+				EFFECT_SEGMENTATION,
+				EFFECT_HIGHLIGHT,
+				EFFECT_GREYSCALE,
+				EFFECT_INVERT,
+				EFFECT_SOLARIZE,
+				EFFECT_SABATTIER,
+				EFFECT_EMBOSS,
+				EFFECT_SOBEL,
+				EFFECT_SPEED_LINES,
+				EFFECT_FILM_GRAIN,
+				EFFECT_DITHER,
+				EFFECT_TYPE_COUNT
+			};
+
 			// ein Effekt: eine Pipeline plus ein Zeiger auf seine Parameter
 			struct Effect {
+				EffectType type{EFFECT_TYPE_COUNT};
 				VkPipeline pipeline{VK_NULL_HANDLE};
 				const void* params{nullptr};
 				uint32_t paramSize{0};
 			};
 
+			void addEffect(EffectType type, const uint32_t* code, size_t sizeInBytes, const void* params, uint32_t paramSize);
+			void removeEffect(EffectType type);
+
+			// the chain, always sorted by type
 			std::vector<Effect>	m_effects;
+			// one pipeline per effect type, created on the first add and destroyed in the destructor
+			VkPipeline m_pipelines[EFFECT_TYPE_COUNT]{};
 			GreyscaleSettings	m_greyscaleSettings;
 			VignetteSettings	m_vignetteSettings;
 			FilmGrainSettings	m_filmGrainSettings;
