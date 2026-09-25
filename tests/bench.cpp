@@ -5,9 +5,12 @@
 #include <iostream>
 #include <string>
 #include <chrono>
+#include <cstdint>
+#include <cstring>
+#include <stdexcept>
 
-// zeichnet einen Command Buffer fuer einmalige enutzung auf
-VkCommandBuffer beginSingleTime(VkDevice device, VkCommandPool pool) {
+// Allocate once, before warm-up and timing.
+VkCommandBuffer allocateCommandBuffer(VkDevice device, VkCommandPool pool) {
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocInfo.commandPool = pool;
@@ -18,7 +21,14 @@ VkCommandBuffer beginSingleTime(VkDevice device, VkCommandPool pool) {
 	if (vkAllocateCommandBuffers(device, &allocInfo, &cmd) != VK_SUCCESS) {
 		throw std::runtime_error("vkAllocateCommandBuffers failed");
 	}
+	return cmd;
+}
 
+// The previous submission has finished before we reset and record again.
+void beginCommand(VkCommandBuffer cmd) {
+	if (vkResetCommandBuffer(cmd, 0) != VK_SUCCESS) {
+		throw std::runtime_error("vkResetCommandBuffer failed");
+	}
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -26,11 +36,10 @@ VkCommandBuffer beginSingleTime(VkDevice device, VkCommandPool pool) {
 		throw std::runtime_error("vkBeginCommandBuffer failed");
 	}
 
-	return cmd;
 }
 
-// beendet, schickt ab und wartet, bis die GPU fertig ist
-void endSingleTime(VkDevice device, VkCommandPool pool, VkQueue queue, VkCommandBuffer cmd) {
+// Submission and waiting are included in the measured wall-clock interval.
+void submitAndWait(VkQueue queue, VkCommandBuffer cmd) {
 	if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
 		throw std::runtime_error("vkEndCommandBuffer failed");
 	}
@@ -47,7 +56,6 @@ void endSingleTime(VkDevice device, VkCommandPool pool, VkQueue queue, VkCommand
 		throw std::runtime_error("vkQueueWaitIdle failed");
 	}
 
-	vkFreeCommandBuffers(device, pool, 1, &cmd);
 }
 
 // sucht einen Speichertyp, der zu den Anforderungen passt
@@ -103,10 +111,69 @@ VkImage createImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t w
 	return image;
 }
 
-// the chain of the postprocessing example in MyVVEV3, in the same order
+// Upload fixed HDR ramps and a checkerboard before warm-up, outside timing.
+void uploadPattern(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue,
+	VkCommandBuffer cmd, VkImage image, uint32_t width, uint32_t height) {
+	// Exact half-float encodings of 0, 0.125, 0.25, ..., 2.0.
+	constexpr uint16_t levels[] = {0x0000, 0x3000, 0x3400, 0x3600, 0x3800,
+		0x3900, 0x3a00, 0x3b00, 0x3c00, 0x3c80, 0x3d00, 0x3d80,
+		0x3e00, 0x3e80, 0x3f00, 0x3f80, 0x4000};
+	const VkDeviceSize bytes = VkDeviceSize(width) * height * 4 * sizeof(uint16_t);
+
+	// A temporary buffer carries CPU-written pixels to the source image.
+	VkBufferCreateInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	info.size = bytes;
+	info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	VkBuffer buffer = VK_NULL_HANDLE;
+	if (vkCreateBuffer(device, &info, nullptr, &buffer) != VK_SUCCESS) {
+		throw std::runtime_error("vkCreateBuffer failed");
+	}
+	VkMemoryRequirements requirements{};
+	vkGetBufferMemoryRequirements(device, buffer, &requirements);
+	VkMemoryAllocateInfo allocation{};
+	allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocation.allocationSize = requirements.size;
+	allocation.memoryTypeIndex = findMemoryType(physicalDevice, requirements.memoryTypeBits,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	VkDeviceMemory memory = VK_NULL_HANDLE;
+	if (vkAllocateMemory(device, &allocation, nullptr, &memory) != VK_SUCCESS ||
+		vkBindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS) {
+		throw std::runtime_error("staging allocation failed");
+	}
+	void* mapped = nullptr;
+	if (vkMapMemory(device, memory, 0, bytes, 0, &mapped) != VK_SUCCESS) {
+		throw std::runtime_error("vkMapMemory failed");
+	}
+	// Red increases horizontally, green vertically; blue alternates in 16-by-16 tiles.
+	auto* pixels = static_cast<uint16_t*>(mapped);
+	for (uint32_t y = 0; y < height; ++y) {
+		for (uint32_t x = 0; x < width; ++x) {
+			const size_t offset = (size_t(y) * width + x) * 4;
+			pixels[offset] = levels[x * 16 / (width - 1)];
+			pixels[offset + 1] = levels[y * 16 / (height - 1)];
+			pixels[offset + 2] = levels[((x * 16 / width + y * 16 / height) % 2) ? 12 : 1];
+			pixels[offset + 3] = levels[8];
+		}
+	}
+	vkUnmapMemory(device, memory);
+
+	beginCommand(cmd);
+	VkBufferImageCopy copy{};
+	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.layerCount = 1;
+	copy.imageExtent = {width, height, 1};
+	vkCmdCopyBufferToImage(cmd, buffer, image, VK_IMAGE_LAYOUT_GENERAL, 1, &copy);
+	submitAndWait(queue, cmd);
+	vkDestroyBuffer(device, buffer, nullptr);
+	vkFreeMemory(device, memory, nullptr);
+}
+
+// All fifteen effects; the library determines their execution order.
 const std::vector<std::string> fullChain = {
 	"tonemap", "chromatic", "greyscale", "vignette", "filmgrain", "colorgrade", "solarize",
-	"sabattier", "emboss", "sobel", "speedlines", "highlight", "segmentation", "dither"
+	"sabattier", "emboss", "sobel", "speedlines", "highlight", "segmentation", "dither", "invert"
 };
 
 // adds one effect by its command-line name, with the default settings of the library
@@ -125,6 +192,7 @@ void addEffect(vvppl::PostProcessing& pp, const std::string& name) {
 	else if (name == "highlight") pp.addHighlight();
 	else if (name == "segmentation") pp.addSegmentation();
 	else if (name == "dither") pp.addDither();
+	else if (name == "invert") pp.addInvert();
 	else throw std::runtime_error("unknown effect: " + name);
 }
 
@@ -142,6 +210,10 @@ int main(int argc, char* argv[]) {
 	const std::string config = argv[3];
 	const int warmup = std::stoi(argv[4]);
 	const int iterations = std::stoi(argv[5]);
+	if (width < 2 || height < 2 || width > 16384 || height > 16384 || warmup < 0 || iterations <= 0) {
+		std::cerr << "invalid dimensions or iteration counts\n";
+		return 1;
+	}
 
 	// ### VkInstance erzeugen
 
@@ -204,10 +276,11 @@ int main(int argc, char* argv[]) {
 	std::vector<VkQueueFamilyProperties> families(familyCount);
 	vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &familyCount, families.data());
 
-	//wir brauchen eine Family, die Compute kann
+	// Blits need graphics support, and the effects need compute support.
 	uint32_t computeFamily = UINT32_MAX;
 	for (uint32_t i = 0; i < familyCount; ++i){
-		if (families[i].queueFlags & VK_QUEUE_COMPUTE_BIT){
+		if ((families[i].queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) ==
+			(VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) {
 			computeFamily = i;
 			break;
 		}
@@ -267,6 +340,7 @@ int main(int argc, char* argv[]) {
 	VkCommandPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolInfo.queueFamilyIndex = computeFamily;
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 	VkCommandPool commandPool = VK_NULL_HANDLE;
 	res = vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool);
@@ -289,9 +363,10 @@ int main(int argc, char* argv[]) {
 
 
 
-	// ### both images to GENERAL once, the source gets a fixed color
+	// Both images enter GENERAL before the one-time pattern upload.
 
-	VkCommandBuffer cmd2 = beginSingleTime(device, commandPool);
+	VkCommandBuffer cmd = allocateCommandBuffer(device, commandPool);
+	beginCommand(cmd);
 
 	// Layout-Uebergang UNDEFINED -> GENERAL, vorher duerfen wir das Image nicht benutzen
 	VkImageMemoryBarrier barrier{};
@@ -314,29 +389,13 @@ int main(int argc, char* argv[]) {
 	dstBarrier.image = dst;
 	VkImageMemoryBarrier barriers[] = {barrier, dstBarrier};
 
-	vkCmdPipelineBarrier(cmd2,
+	vkCmdPipelineBarrier(cmd,
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, // worauf gewartet wird: auf nichts
-		VK_PIPELINE_STAGE_TRANSFER_BIT, // was warten muss: der Clear
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0, 0, nullptr, 0, nullptr, 2, barriers);
 
-	// jetzt darf geschrieben werden
-	// the source keeps a single color for the whole benchmark
-	VkClearColorValue clearColor{};
-	clearColor.float32[0] = 0.8f;
-	clearColor.float32[1] = 0.5f;
-	clearColor.float32[2] = 0.2f;
-	clearColor.float32[3] = 1.0f;
-
-	VkImageSubresourceRange range{};
-	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	range.baseMipLevel = 0;
-	range.levelCount = 1;
-	range.baseArrayLayer = 0;
-	range.layerCount = 1;
-
-	vkCmdClearColorImage(cmd2, src, VK_IMAGE_LAYOUT_GENERAL, &clearColor, 1, &range);
-
-	endSingleTime(device, commandPool, computeQueue, cmd2);
+	submitAndWait(computeQueue, cmd);
+	uploadPattern(device, physicalDevice, computeQueue, cmd, src, width, height);
 
 
 
@@ -351,18 +410,18 @@ int main(int argc, char* argv[]) {
 
 		// warm-up without timing, so first submits and driver caches are not measured
 		for (int i = 0; i < warmup; ++i) {
-			VkCommandBuffer cmd = beginSingleTime(device, commandPool);
+			beginCommand(cmd);
 			pp.apply(cmd, src, dst);
-			endSingleTime(device, commandPool, computeQueue, cmd);
+			submitAndWait(computeQueue, cmd);
 		}
 
 		// timed: record, submit and wait for one apply call
 		std::chrono::duration<double, std::milli> total{0};
 		for (int i = 0; i < iterations; ++i) {
 			auto start = std::chrono::steady_clock::now();
-			VkCommandBuffer cmd = beginSingleTime(device, commandPool);
+			beginCommand(cmd);
 			pp.apply(cmd, src, dst);
-			endSingleTime(device, commandPool, computeQueue, cmd);
+			submitAndWait(computeQueue, cmd);
 			total += std::chrono::steady_clock::now() - start;
 		}
 
@@ -375,6 +434,7 @@ int main(int argc, char* argv[]) {
 
 
 	// ### final destroy
+	vkFreeCommandBuffers(device, commandPool, 1, &cmd);
 	vkDestroyImage(device, dst, nullptr);
 	vkFreeMemory(device, dstMemory, nullptr);
 
