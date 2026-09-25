@@ -1,4 +1,11 @@
-[[vk::binding(0,0)]]
+/**
+ * @file tonemap.slang
+ * @brief Tone mapping: maps the HDR color to 0..1 with an ACES curve.
+ *
+ * Reads binding 0 and writes binding 1; Params matches vvppl::TonemapSettings in VVPPL.h.
+ */
+
+[[vk::binding(0, 0)]]
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> inImage;
 
@@ -8,10 +15,10 @@ RWTexture2D<float4> outImage;
 
 struct Params {
     float exposure;
-}
+};
 [[vk::push_constant]] Params params;
 
-// ACES-Naeherung nach Narkowicz, eine Kurve statt der vollen ACES-Transformation
+/// @brief ACES approximation by Narkowicz, one curve instead of the full ACES transform.
 float3 acesFilmic(float3 x) {
     const float a = 2.51;
     const float b = 0.03;
@@ -22,11 +29,10 @@ float3 acesFilmic(float3 x) {
 }
 
 [shader("compute")]
-[numthreads(8,8,1)]
-void main(uint3 id: SV_DispatchThreadID) {
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
     float4 color = inImage[id.xy];
-    // Exposure skaliert vor der Kurve - danach waere es wirkungslos
+    // exposure scales the HDR color before the curve compresses it into 0..1
     color.rgb = acesFilmic(color.rgb * params.exposure);
     outImage[id.xy] = color;
 }
-

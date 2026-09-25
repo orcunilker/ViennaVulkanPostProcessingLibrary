@@ -1,4 +1,11 @@
-[[vk::binding(0,0)]]
+/**
+ * @file vignette.slang
+ * @brief Vignette: darkens the image towards the corners.
+ *
+ * Reads binding 0 and writes binding 1; Params matches vvppl::VignetteSettings in VVPPL.h.
+ */
+
+[[vk::binding(0, 0)]]
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> inImage;
 
@@ -14,30 +21,29 @@ struct Params {
 [[vk::push_constant]] Params params;
 
 [shader("compute")]
-[numthreads(8,8,1)]
-void main(uint3 id: SV_DispatchThreadID) {
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
     uint width, height;
     inImage.GetDimensions(width, height);
 
     if (id.x >= width || id.y >= height) return;
 
-    // Pixelmitte in 0..1. Das +0.5 ist wichtig: id ist der ganzzahlige Pixelindex,
-    // die Mitte von Pixel 0 liegt bei 0.5 und nicht bei 0.
+    // pixel center in 0..1; the + 0.5 matters because id is the integer pixel index
+    // and the center of pixel 0 lies at 0.5, not at 0
     float2 uv = (float2(id.xy) + 0.5) / float2(width, height);
 
-    // Vektor von der Bildmitte weg, Bereich -0.5 bis 0.5
+    // vector from the image center, -0.5..0.5
     float2 d = uv - 0.5;
 
-    // Seitenverhaeltnis korrigieren, sonst wird der Kreis zur Ellipse
+    // correct the aspect ratio, otherwise the circle becomes an ellipse
     d.x *= float(width) / float(height);
 
-    // Abstand zur Mitte in einen Helligkeitsfaktor umrechnen:
-    // 1 innerhalb von radius, weich abfallend auf 0 bei radius + smoothness
+    // brightness factor from the distance to the center:
+    // 1 within radius, falling smoothly to 0 at radius + smoothness
     float v = 1.0 - smoothstep(params.radius, params.radius + params.smoothness, length(d));
 
     float4 color = inImage[id.xy];
-    // intensity blendet zwischen "kein Effekt" (1.0) und vollem Abfall (v)
+    // intensity blends between no effect (1.0) and the full falloff (v)
     color.rgb *= lerp(1.0, v, params.intensity);
     outImage[id.xy] = color;
 }
-

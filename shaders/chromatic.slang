@@ -1,4 +1,11 @@
-[[vk::binding(0,0)]]
+/**
+ * @file chromatic.slang
+ * @brief Chromatic aberration: splits red and blue apart, from zero at the image center towards the border.
+ *
+ * Reads binding 0 and writes binding 1; Params matches vvppl::ChromaticSettings in VVPPL.h.
+ */
+
+[[vk::binding(0, 0)]]
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> inImage;
 
@@ -8,12 +15,12 @@ RWTexture2D<float4> outImage;
 
 struct Params {
     float intensity;
-}
+};
 [[vk::push_constant]] Params params;
 
 [shader("compute")]
-[numthreads(8,8,1)]
-void main(uint3 id: SV_DispatchThreadID) {
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
     uint width, height;
     inImage.GetDimensions(width, height);
 
@@ -22,10 +29,10 @@ void main(uint3 id: SV_DispatchThreadID) {
     int2 size = int2(width, height);
     float2 uv = (float2(id.xy) + 0.5) / float2(size);
 
-    // Versatz waechst nach aussen und ist in der Bildmitte null
+    // the offset grows outwards and is zero at the image center
     float2 offset = (uv - 0.5) * params.intensity;
 
-    // Rot nach aussen, Blau nach innen, Gruen bleibt an Ort und Stelle
+    // red is read further out, blue further in, green stays in place
     int2 pR = clamp(int2((uv + offset) * float2(size)), int2(0, 0), size - 1);
     int2 pB = clamp(int2((uv - offset) * float2(size)), int2(0, 0), size - 1);
 
@@ -34,4 +41,3 @@ void main(uint3 id: SV_DispatchThreadID) {
     color.b = inImage[pB].b;
     outImage[id.xy] = color;
 }
-
