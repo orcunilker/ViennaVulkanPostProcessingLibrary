@@ -1,0 +1,10 @@
+# run `doxygen` in this directory, the HTML reference ends up in build/doxygen/html
+PROJECT_NAME           = VVPPL
+PROJECT_BRIEF          = "Vienna Vulkan Post-Processing Library"
+INPUT                  = include src README.md
+USE_MDFILE_AS_MAINPAGE = README.md
+IMAGE_PATH             = docs/images
+OUTPUT_DIRECTORY       = build/doxygen
+GENERATE_LATEX         = NO
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
