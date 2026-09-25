@@ -19,7 +19,6 @@ if [ -e "$OUT" ]; then
 	exit 1
 fi
 
-# Provisional values; complete the pilot before fixing the main protocol.
 WARMUP=500
 ITERATIONS=500
 SIZES="1920x1080 3840x2160"
