@@ -1,4 +1,11 @@
-[[vk::binding(0,0)]]
+/**
+ * @file highlight.slang
+ * @brief Color highlight: keeps colors close to a key color and desaturates the rest.
+ *
+ * Reads binding 0 and writes binding 1; Params matches vvppl::HighlightSettings in VVPPL.h.
+ */
+
+[[vk::binding(0, 0)]]
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> inImage;
 
@@ -10,12 +17,12 @@ struct Params {
     float keyR, keyG, keyB;
     float tolerance;
     float strength;
-}
+};
 [[vk::push_constant]] Params params;
 
 [shader("compute")]
-[numthreads(8,8,1)]
-void main(uint3 id: SV_DispatchThreadID) {
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
     uint width, height;
     inImage.GetDimensions(width, height);
 

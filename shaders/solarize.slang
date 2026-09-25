@@ -1,4 +1,11 @@
-[[vk::binding(0,0)]]
+/**
+ * @file solarize.slang
+ * @brief Solarization: inverts every channel above a threshold.
+ *
+ * Reads binding 0 and writes binding 1; Params matches vvppl::SolarizeSettings in VVPPL.h.
+ */
+
+[[vk::binding(0, 0)]]
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> inImage;
 
@@ -8,12 +15,12 @@ RWTexture2D<float4> outImage;
 
 struct Params {
     float threshold;
-}
+};
 [[vk::push_constant]] Params params;
 
 [shader("compute")]
-[numthreads(8,8,1)]
-void main(uint3 id: SV_DispatchThreadID) {
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
     uint width, height;
     inImage.GetDimensions(width, height);
 

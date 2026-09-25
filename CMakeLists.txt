@@ -1,13 +1,12 @@
-
-cmake_minimum_required (VERSION 3.15) # 3.15 für VVE V3
-project (
+cmake_minimum_required(VERSION 3.15) # same minimum as the Vienna Vulkan Engine V2
+project(
   "ViennaVulkanPostProcessingLibrary"
   VERSION 1.0
   DESCRIPTION "A post processing library for Vulkan."
   LANGUAGES CXX
 )
 
-# enforce C++20 standard
+# enforce the C++20 standard
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release")
@@ -15,18 +14,17 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;Release")
 # the library uses Vulkan types, so the Vulkan SDK is needed
 find_package(Vulkan REQUIRED)
 
-# enable clang-tidy. disable to speed up compilation
+# enable clang-tidy, disabled to speed up compilation
 #set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #set(CMAKE_CXX_CLANG_TIDY clang-tidy -checks=readability-*;cppcoreguidelines-*;-header-filter=.*; -p build)
 
-
+# compile every shader with slangc to SPIR-V and embed it in a generated header
+# as the uint32_t array <name>_spv, which src/VVPPL.cpp includes
 set(GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
 file(MAKE_DIRECTORY ${GENERATED_DIR})
 
 find_program(SLANGC slangc HINTS $ENV{VULKAN_SDK}/bin REQUIRED)
 
-# schleife für mehrere 
-# uebersetzt invert.slang nach SPIR-V und bettet es als uint32-Array ein
 set(SHADERS invert greyscale vignette filmgrain chromatic tonemap colorgrade dither
   solarize sabattier emboss sobel speedlines highlight segmentation)
 set(GENERATED_HEADERS "")
@@ -43,13 +41,11 @@ foreach(SHADER ${SHADERS})
   list(APPEND GENERATED_HEADERS ${GENERATED_DIR}/${SHADER}_spv.h)
 endforeach()
 
-
-
 add_library(vvppl src/VVPPL.cpp ${GENERATED_HEADERS})
 
-# Hosts wie die VVE laden Vulkan selbst per volk. In dem Fall teilt sich die
-# Library deren Funktionsueiger, statt zusätloich den Loader zu linken
-option(VVPPL_USE_VOLK "Use the host's volk-loaded functions pointers" OFF)
+# Hosts like the VVE load Vulkan themselves with volk. In that case the library
+# shares their function pointers instead of linking the Vulkan loader as well.
+option(VVPPL_USE_VOLK "Use the host's volk-loaded function pointers" OFF)
 
 if(VVPPL_USE_VOLK)
   target_compile_definitions(vvppl PUBLIC VVPPL_USE_VOLK)
@@ -58,11 +54,11 @@ else()
   target_link_libraries(vvppl PUBLIC Vulkan::Vulkan)
 endif()
 
-
 target_include_directories(vvppl PUBLIC include PRIVATE ${GENERATED_DIR})
 target_compile_features(vvppl PUBLIC cxx_std_20)
 
-if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
+# the headless test is only built when the library is the top-level project, not inside a host
+if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
   include(CTest)
   add_subdirectory(tests)
-endif ()
+endif()

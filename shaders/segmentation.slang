@@ -1,4 +1,11 @@
-[[vk::binding(0,0)]]
+/**
+ * @file segmentation.slang
+ * @brief Hue segmentation: replaces every color by the nearest of a few fully saturated hues.
+ *
+ * Reads binding 0 and writes binding 1; Params matches vvppl::SegmentationSettings in VVPPL.h.
+ */
+
+[[vk::binding(0, 0)]]
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> inImage;
 
@@ -10,17 +17,17 @@ struct Params {
     float segments;
     float minChroma;
     float strength;
-}
+};
 [[vk::push_constant]] Params params;
 
-// hue in 0..1 to a fully saturated color
+/// @brief Converts a hue in 0..1 to a fully saturated color.
 float3 hueToRgb(float hue) {
     return saturate(abs(frac(hue + float3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0);
 }
 
 [shader("compute")]
-[numthreads(8,8,1)]
-void main(uint3 id: SV_DispatchThreadID) {
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
     uint width, height;
     inImage.GetDimensions(width, height);
 

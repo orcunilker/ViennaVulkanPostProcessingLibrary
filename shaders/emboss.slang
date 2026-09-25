@@ -1,4 +1,11 @@
-[[vk::binding(0,0)]]
+/**
+ * @file emboss.slang
+ * @brief Emboss: 3x3 relief filter along the diagonal.
+ *
+ * Reads binding 0 and writes binding 1; Params matches vvppl::EmbossSettings in VVPPL.h.
+ */
+
+[[vk::binding(0, 0)]]
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> inImage;
 
@@ -8,10 +15,10 @@ RWTexture2D<float4> outImage;
 
 struct Params {
     float strength;
-}
+};
 [[vk::push_constant]] Params params;
 
-// emboss kernel along the diagonal, the weights sum to one so flat areas keep their color
+/// Emboss kernel along the diagonal, the weights sum to one so flat areas keep their color.
 static const float kernel[9] = {
     -2.0, -1.0, 0.0,
     -1.0,  1.0, 1.0,
@@ -19,14 +26,15 @@ static const float kernel[9] = {
 };
 
 [shader("compute")]
-[numthreads(8,8,1)]
-void main(uint3 id: SV_DispatchThreadID) {
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
     uint width, height;
     inImage.GetDimensions(width, height);
 
     if (id.x >= width || id.y >= height) return;
 
-    // Keep the input texture in scope before entering the loops.
+    // read the center pixel before the neighborhood loop: KosmicKrisp (Vulkan SDK 1.4.350.0) otherwise
+    // declares the Metal texture inside the loop and uses it out of scope; its alpha is kept
     float4 color = inImage[id.xy];
 
     int2 size = int2(width, height);
