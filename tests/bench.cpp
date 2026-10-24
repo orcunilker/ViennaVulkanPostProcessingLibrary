@@ -196,6 +196,15 @@ void addEffect(vvppl::PostProcessing& pp, const std::string& name) {
 	else throw std::runtime_error("unknown effect: " + name);
 }
 
+// Records one apply call between two GPU timestamps. A timestamp query can only be written
+// again after a reset, so both queries are reset first.
+void recordApply(VkCommandBuffer cmd, vvppl::PostProcessing& pp, VkImage src, VkImage dst, VkQueryPool queries) {
+	vkCmdResetQueryPool(cmd, queries, 0, 2);
+	vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queries, 0);
+	pp.apply(cmd, src, dst);
+	vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queries, 1);
+}
+
 
 
 int main(int argc, char* argv[]) {
@@ -290,6 +299,13 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
+	// GPU timestamps need a queue family whose counter has valid bits
+	const uint32_t timestampBits = families[computeFamily].timestampValidBits;
+	if (timestampBits == 0) {
+		std::cerr << "queue family without timestamp support\n";
+		return 1;
+	}
+
 
 	// ### logical device (VkDevice)
 
@@ -348,6 +364,27 @@ int main(int argc, char* argv[]) {
 		std::cerr << "vkCreateCommandPool failed: " << res << "\n";
 		return 1;
 	}
+
+
+	// ### query pool for the two GPU timestamps around each apply call
+
+	VkQueryPoolCreateInfo queryInfo{};
+	queryInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+	queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+	queryInfo.queryCount = 2;
+
+	VkQueryPool queryPool = VK_NULL_HANDLE;
+	res = vkCreateQueryPool(device, &queryInfo, nullptr, &queryPool);
+	if (res != VK_SUCCESS) {
+		std::cerr << "vkCreateQueryPool failed: " << res << "\n";
+		return 1;
+	}
+
+	// nanoseconds per timestamp tick, and a mask for counters with fewer than 64 valid bits
+	VkPhysicalDeviceProperties properties{};
+	vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+	const double nanosecondsPerTick = properties.limits.timestampPeriod;
+	const uint64_t timestampMask = timestampBits >= 64 ? ~0ULL : (1ULL << timestampBits) - 1;
 
 
 
@@ -411,23 +448,32 @@ int main(int argc, char* argv[]) {
 		// warm-up without timing, so first submits and driver caches are not measured
 		for (int i = 0; i < warmup; ++i) {
 			beginCommand(cmd);
-			pp.apply(cmd, src, dst);
+			recordApply(cmd, pp, src, dst, queryPool);
 			submitAndWait(computeQueue, cmd);
 		}
 
 		// timed: record, submit and wait for one apply call
 		std::chrono::duration<double, std::milli> total{0};
+		double gpuTotal = 0.0;
 		for (int i = 0; i < iterations; ++i) {
 			auto start = std::chrono::steady_clock::now();
 			beginCommand(cmd);
-			pp.apply(cmd, src, dst);
+			recordApply(cmd, pp, src, dst, queryPool);
 			submitAndWait(computeQueue, cmd);
 			total += std::chrono::steady_clock::now() - start;
+
+			// read both timestamps after the clock has stopped, so the readback is not measured
+			uint64_t ticks[2] = {};
+			if (vkGetQueryPoolResults(device, queryPool, 0, 2, sizeof(ticks), ticks, sizeof(uint64_t),
+					VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT) != VK_SUCCESS) {
+				throw std::runtime_error("vkGetQueryPoolResults failed");
+			}
+			gpuTotal += double((ticks[1] - ticks[0]) & timestampMask) * nanosecondsPerTick / 1e6;
 		}
 
-		// config,width,height,warmup,iterations,mean_ms
+		// config,width,height,warmup,iterations,mean_ms,gpu_ms
 		std::cout << config << "," << width << "," << height << "," << warmup << ","
-			<< iterations << "," << total.count() / iterations << "\n";
+			<< iterations << "," << total.count() / iterations << "," << gpuTotal / iterations << "\n";
 	} // pp has to be destroyed before the device
 
 
@@ -441,6 +487,7 @@ int main(int argc, char* argv[]) {
 	vkDestroyImage(device, src, nullptr);
 	vkFreeMemory(device, srcMemory, nullptr);
 
+	vkDestroyQueryPool(device, queryPool, nullptr);
 	vkDestroyCommandPool(device, commandPool, nullptr);
 
 	vkDestroyDevice(device, nullptr);

@@ -24,7 +24,7 @@ ITERATIONS=500
 SIZES="1920x1080 3840x2160"
 CONFIGS="empty full tonemap chromatic greyscale vignette filmgrain colorgrade solarize sabattier emboss sobel speedlines highlight segmentation dither invert"
 
-echo "round,config,width,height,warmup,iterations,mean_ms" > "$OUT"
+echo "round,config,width,height,warmup,iterations,mean_ms,gpu_ms" > "$OUT"
 
 for round in $(seq 1 "$ROUNDS"); do
 	echo "round $round of $ROUNDS" >&2
