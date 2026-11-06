@@ -1,0 +1,139 @@
+{
+  "date": "2026-11-06",
+  "purpose": "Requested by the supervisor: the default chains of the example applications (vsg3: three effects of vsgortho, vve5: five effects of the examples of VVE v2 and VVE v3) and chains of one repeated shader (invert in one, three, five and fifteen passes), each against the sum of its single effects. The empty chain, the 15 single effects and the full chain run again in the same rounds, so that every prediction uses single effects of the same round.",
+  "fixed_before_main_series": true,
+  "phases": [
+    "standalone",
+    "standalone-gpu"
+  ],
+  "program": "MyVVPP working tree on branch benchmark (63631c5 plus the changes of this series, recorded in source-state.json and MyVVPP-working-tree.patch): the library with the cleanup of the failing constructor and the function setInvertPasses of the measurement branch, bench.cpp with the configurations vsg3, vve5 and invert<n> and GPU timestamps only with VVPP_GPU_TIMESTAMPS=1, bench.sh with 22 configurations. apply() compiles to the same machine code as in the build of v1.0, the shader headers are byte-identical.",
+  "variants": {
+    "without timestamps": "standalone.csv, VVPP_GPU_TIMESTAMPS unset: the program records only apply() and writes gpu_ms = 0, like the bench of 2026-09-25 (2a3b81f)",
+    "with timestamps": "standalone-gpu.csv, VVPP_GPU_TIMESTAMPS=1: two timestamps directly before and after apply(), like the bench of 2026-10-24 (63631c5)"
+  },
+  "standalone": {
+    "rounds": 20,
+    "warmup": 500,
+    "iterations": 500,
+    "sizes": [
+      [
+        1920,
+        1080
+      ],
+      [
+        3840,
+        2160
+      ]
+    ],
+    "effects": [
+      "tonemap",
+      "chromatic",
+      "greyscale",
+      "vignette",
+      "filmgrain",
+      "colorgrade",
+      "solarize",
+      "sabattier",
+      "emboss",
+      "sobel",
+      "speedlines",
+      "highlight",
+      "segmentation",
+      "dither",
+      "invert"
+    ],
+    "chains": {
+      "vsg3": [
+        "chromatic",
+        "vignette",
+        "filmgrain"
+      ],
+      "vve5": [
+        "chromatic",
+        "vignette",
+        "tonemap",
+        "greyscale",
+        "filmgrain"
+      ],
+      "full": [
+        "tonemap",
+        "chromatic",
+        "greyscale",
+        "vignette",
+        "filmgrain",
+        "colorgrade",
+        "solarize",
+        "sabattier",
+        "emboss",
+        "sobel",
+        "speedlines",
+        "highlight",
+        "segmentation",
+        "dither",
+        "invert"
+      ],
+      "invert3": [
+        "invert",
+        "invert",
+        "invert"
+      ],
+      "invert5": [
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert"
+      ],
+      "invert15": [
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert",
+        "invert"
+      ]
+    },
+    "configurations": [
+      "empty",
+      "tonemap",
+      "chromatic",
+      "greyscale",
+      "vignette",
+      "filmgrain",
+      "colorgrade",
+      "solarize",
+      "sabattier",
+      "emboss",
+      "sobel",
+      "speedlines",
+      "highlight",
+      "segmentation",
+      "dither",
+      "invert",
+      "full",
+      "vsg3",
+      "vve5",
+      "invert3",
+      "invert5",
+      "invert15"
+    ],
+    "settings": "default settings of the library for every effect, as in the series of 2026-10-25; the example applications set other values (e.g. exposure 0.6)",
+    "expected_runs_per_variant": 880,
+    "order": "random resolution blocks per round; random configurations inside each block (bench.sh, sort -R)",
+    "measured": "mean_ms: wall-clock time of reset, recording, submission and waiting per call; gpu_ms (with timestamps only): difference of two timestamps written directly before and after apply()"
+  },
+  "execution": "two sequential phases in one session; release build without validation or capture layers (checked with VK_LOADER_DEBUG=layer); MoltenVK ICD of Vulkan SDK 1.4.357.1; Python 3.13 from Homebrew and /bin/bash both native arm64 (checked before every phase); caffeinate -dims against display and system sleep; AC power. Unlike on 2026-10-25, the computer was not prepared by the student: VS Code, Google Drive and an antivirus program ran in the background (top in source-state.json), the display setting was left as it was, since the standalone benchmark presents nothing.",
+  "checks": "validation.json: every configuration of both variants once in the debug build with the validation layer (88 runs) and the tests testlib, pixeltest and cleanuptest, no message, layer loading confirmed by the loader; checks.json: architecture of all programs, no layer in the release program, gpu_ms 0 without and positive with the variable",
+  "pilot": "40 runs in pilot/runs.csv (empty, invert, invert15, vve5 and full at both sizes, both variants, two rounds), excluded from the analysis",
+  "statistics": "Run means; per round the deviation of a chain from its prediction, T(chain) - (T(empty) + sum over the effects of the chain of (T(effect) - T(empty))), for invert<n> the single invert n times; pointwise t-based 95% confidence intervals; two-sided t tests and Wilcoxon signed-rank tests as a check; Holm family of the six chains at both sizes (12 tests) per kind of time. Chains with the same number of passes (vsg3 and invert3, vve5 and invert5, full and invert15) are compared by the paired difference of their deviations in ms, Holm over these six comparisons per kind of time. No equivalence claim from non-rejection.",
+  "failure_policy": "Stop on a process failure; preserve partial data and logs. No slow valid observation is discarded."
+}

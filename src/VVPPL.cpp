@@ -65,12 +65,13 @@ namespace {
 
         VkPipeline pipeline{};
         res = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &pipeline);
+
+        // the pipeline no longer needs the module once it is created, and a failed creation needs it neither
+        vkDestroyShaderModule(device, shaderModule, nullptr);
+
         if (res != VK_SUCCESS) {
             throw std::runtime_error("vkCreateComputePipelines failed: " + std::to_string(res));
         }
-
-        // the pipeline no longer needs the module once it is created
-        vkDestroyShaderModule(device, shaderModule, nullptr);
 
         return pipeline;
     }
@@ -104,8 +105,10 @@ namespace vvppl {
             imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
             imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
+            // after a failed call a handle is undefined, so it is reset for destroyImages(), which skips null handles
             res = vkCreateImage(m_device, &imageInfo, nullptr, &m_images[i]);
             if (res != VK_SUCCESS) {
+                m_images[i] = VK_NULL_HANDLE;
                 throw std::runtime_error("vkCreateImage failed: " + std::to_string(res));
             }
 
@@ -121,6 +124,7 @@ namespace vvppl {
 
             res = vkAllocateMemory(m_device, &allocInfo, nullptr, &m_imageMemorys[i]);
             if (res != VK_SUCCESS) {
+                m_imageMemorys[i] = VK_NULL_HANDLE;
                 throw std::runtime_error("vkAllocateMemory failed: " + std::to_string(res));
             }
 
@@ -140,6 +144,7 @@ namespace vvppl {
 
             res = vkCreateImageView(m_device, &viewInfo, nullptr, &m_imageViews[i]);
             if (res != VK_SUCCESS) {
+                m_imageViews[i] = VK_NULL_HANDLE;
                 throw std::runtime_error("vkCreateImageView failed: " + std::to_string(res));
             }
         }
@@ -199,86 +204,100 @@ namespace vvppl {
           m_framesInFlight(framesInFlight) {
         VkResult res;
 
-        createImages();
+        // a constructor that throws runs no destructor, so the catch below destroys the objects created before the
+        // error, and a host that catches the exception and tries again does not lose them
+        try {
+            createImages();
 
-        // two storage images for the compute shader: binding 0 is read, binding 1 is written
-        VkDescriptorSetLayoutBinding bindings[2]{};
-        bindings[0].binding = 0;
-        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        bindings[1] = bindings[0];
-        bindings[1].binding = 1;
+            // two storage images for the compute shader: binding 0 is read, binding 1 is written
+            VkDescriptorSetLayoutBinding bindings[2]{};
+            bindings[0].binding = 0;
+            bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            bindings[0].descriptorCount = 1;
+            bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+            bindings[1] = bindings[0];
+            bindings[1].binding = 1;
 
-        // the layout is the same for every descriptor set of the library
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 2;
-        layoutInfo.pBindings = bindings;
+            // the layout is the same for every descriptor set of the library
+            VkDescriptorSetLayoutCreateInfo layoutInfo{};
+            layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            layoutInfo.bindingCount = 2;
+            layoutInfo.pBindings = bindings;
 
-        res = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_descriptorSetLayout);
-        if (res != VK_SUCCESS) {
-            throw std::runtime_error("vkCreateDescriptorSetLayout failed: " + std::to_string(res));
-        }
+            res = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_descriptorSetLayout);
+            if (res != VK_SUCCESS) {
+                m_descriptorSetLayout = VK_NULL_HANDLE;
+                throw std::runtime_error("vkCreateDescriptorSetLayout failed: " + std::to_string(res));
+            }
 
-        // two sets per frame in flight with two storage images each
-        VkDescriptorPoolSize poolSize{};
-        poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        poolSize.descriptorCount = 4 * framesInFlight;
+            // two sets per frame in flight with two storage images each
+            VkDescriptorPoolSize poolSize{};
+            poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            poolSize.descriptorCount = 4 * framesInFlight;
 
-        VkDescriptorPoolCreateInfo descPoolInfo{};
-        descPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        descPoolInfo.maxSets = 2 * framesInFlight;
-        descPoolInfo.poolSizeCount = 1;
-        descPoolInfo.pPoolSizes = &poolSize;
+            VkDescriptorPoolCreateInfo descPoolInfo{};
+            descPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            descPoolInfo.maxSets = 2 * framesInFlight;
+            descPoolInfo.poolSizeCount = 1;
+            descPoolInfo.pPoolSizes = &poolSize;
 
-        res = vkCreateDescriptorPool(device, &descPoolInfo, nullptr, &m_descriptorPool);
-        if (res != VK_SUCCESS) {
-            throw std::runtime_error("vkCreateDescriptorPool failed: " + std::to_string(res));
-        }
+            res = vkCreateDescriptorPool(device, &descPoolInfo, nullptr, &m_descriptorPool);
+            if (res != VK_SUCCESS) {
+                m_descriptorPool = VK_NULL_HANDLE;
+                throw std::runtime_error("vkCreateDescriptorPool failed: " + std::to_string(res));
+            }
 
-        // one set for each direction of the ping-pong, per frame in flight
-        m_descriptorSets.resize(2 * framesInFlight);
+            // one set for each direction of the ping-pong, per frame in flight; the sets are freed with their pool
+            m_descriptorSets.resize(2 * framesInFlight);
 
-        VkDescriptorSetAllocateInfo setAlloc{};
-        setAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        setAlloc.descriptorPool = m_descriptorPool;
-        setAlloc.descriptorSetCount = m_descriptorSets.size();
-        // vkAllocateDescriptorSets takes one layout per set, here always the same
-        std::vector<VkDescriptorSetLayout> setLayouts(m_descriptorSets.size(), m_descriptorSetLayout);
-        setAlloc.pSetLayouts = setLayouts.data();
+            VkDescriptorSetAllocateInfo setAlloc{};
+            setAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            setAlloc.descriptorPool = m_descriptorPool;
+            setAlloc.descriptorSetCount = m_descriptorSets.size();
+            // vkAllocateDescriptorSets takes one layout per set, here always the same
+            std::vector<VkDescriptorSetLayout> setLayouts(m_descriptorSets.size(), m_descriptorSetLayout);
+            setAlloc.pSetLayouts = setLayouts.data();
 
-        res = vkAllocateDescriptorSets(device, &setAlloc, m_descriptorSets.data());
-        if (res != VK_SUCCESS) {
-            throw std::runtime_error("vkAllocateDescriptorSets failed: " + std::to_string(res));
-        }
+            res = vkAllocateDescriptorSets(device, &setAlloc, m_descriptorSets.data());
+            if (res != VK_SUCCESS) {
+                throw std::runtime_error("vkAllocateDescriptorSets failed: " + std::to_string(res));
+            }
 
-        writeDescriptorSets();
+            writeDescriptorSets();
 
-        // push constants carry the settings of the current effect, 128 bytes is the minimum every device supports
-        VkPushConstantRange pushRange{};
-        pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        pushRange.offset = 0;
-        pushRange.size = 128;
+            // push constants carry the settings of the current effect, 128 bytes is the minimum every device supports
+            VkPushConstantRange pushRange{};
+            pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+            pushRange.offset = 0;
+            pushRange.size = 128;
 
-        // one pipeline layout shared by all effects
-        VkPipelineLayoutCreateInfo pipeLayoutInfo{};
-        pipeLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipeLayoutInfo.setLayoutCount = 1;
-        pipeLayoutInfo.pSetLayouts = &m_descriptorSetLayout;
-        pipeLayoutInfo.pushConstantRangeCount = 1;
-        pipeLayoutInfo.pPushConstantRanges = &pushRange;
+            // one pipeline layout shared by all effects
+            VkPipelineLayoutCreateInfo pipeLayoutInfo{};
+            pipeLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+            pipeLayoutInfo.setLayoutCount = 1;
+            pipeLayoutInfo.pSetLayouts = &m_descriptorSetLayout;
+            pipeLayoutInfo.pushConstantRangeCount = 1;
+            pipeLayoutInfo.pPushConstantRanges = &pushRange;
 
-        res = vkCreatePipelineLayout(device, &pipeLayoutInfo, nullptr, &m_pipelineLayout);
-        if (res != VK_SUCCESS) {
-            throw std::runtime_error("vkCreatePipelineLayout failed: " + std::to_string(res));
+            res = vkCreatePipelineLayout(device, &pipeLayoutInfo, nullptr, &m_pipelineLayout);
+            if (res != VK_SUCCESS) {
+                m_pipelineLayout = VK_NULL_HANDLE;
+                throw std::runtime_error("vkCreatePipelineLayout failed: " + std::to_string(res));
+            }
+        } catch (...) {
+            destroyAll();
+            throw;
         }
 
         // the effect pipelines are created by the first add of each effect
     }
 
-    PostProcessing::~PostProcessing() {
-        // also the pipelines of removed effects, never created ones are VK_NULL_HANDLE and ignored
+    PostProcessing::~PostProcessing() { destroyAll(); }
+
+    // used by the destructor and by a constructor that fails; objects that were never created are VK_NULL_HANDLE,
+    // which every vkDestroy function and vkFreeMemory ignore
+    void PostProcessing::destroyAll() {
+        // also the pipelines of removed effects
         for (size_t i = 0; i < EFFECT_TYPE_COUNT; i++) {
             vkDestroyPipeline(m_device, m_pipelines[i], nullptr);
         }
@@ -376,6 +395,12 @@ namespace vvppl {
     // invert has no settings and therefore no push constants
     void PostProcessing::addInvert() { addEffect(EFFECT_INVERT, invert_spv, invert_spv_sizeInBytes, nullptr, 0); }
     void PostProcessing::removeInvert() { removeEffect(EFFECT_INVERT); }
+
+    // measurement branch only: a chain whose passes all run the same shader, for the benchmark
+    void PostProcessing::setInvertPasses(uint32_t count) {
+        addInvert();
+        m_effects.assign(count, Effect{EFFECT_INVERT, m_pipelines[EFFECT_INVERT], nullptr, 0});
+    }
 
     SolarizeSettings& PostProcessing::addSolarize() {
         addEffect(EFFECT_SOLARIZE, solarize_spv, solarize_spv_sizeInBytes, &m_solarizeSettings,

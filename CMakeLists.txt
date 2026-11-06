@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15) # same minimum as the Vienna Vulkan Engine V2
 project(
   "ViennaVulkanPostProcessingLibrary"
-  VERSION 1.0
+  VERSION 1.0.1
   DESCRIPTION "A post processing library for Vulkan."
   LANGUAGES CXX
 )

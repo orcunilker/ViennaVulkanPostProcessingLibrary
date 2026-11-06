@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-25",
+  "purpose": "Repetition of both series (2026-09-25 without timestamps, 2026-10-24 with timestamps) in one session, both with the library v1.0 and natively on arm64",
+  "fixed_before_main_series": true,
+  "phases": ["standalone", "engine", "standalone-gpu", "engine-gpu"],
+  "variants": {
+    "without timestamps": "standalone.csv from MyVVPP 2a3b81f (bench of 2026-09-25 with the library v1.0), engine.csv from MyVVEV3 96c82156 without VVPP_GPU_TIMESTAMPS",
+    "with timestamps": "standalone-gpu.csv from MyVVPP 63631c5 (bench of 2026-10-24), engine-gpu.csv from MyVVEV3 96c82156 with VVPP_GPU_TIMESTAMPS=1"
+  },
+  "standalone": {
+    "rounds": 20,
+    "warmup": 500,
+    "iterations": 500,
+    "sizes": [[1920, 1080], [3840, 2160]],
+    "effects": ["tonemap", "chromatic", "greyscale", "vignette", "filmgrain", "colorgrade", "solarize", "sabattier", "emboss", "sobel", "speedlines", "highlight", "segmentation", "dither", "invert"],
+    "expected_runs_per_variant": 680,
+    "order": "random resolution blocks per round; random configurations inside each block",
+    "measured": "mean_ms: wall-clock time of reset, recording, submission and waiting per call; gpu_ms (with timestamps only): difference of two timestamps written directly before and after apply()"
+  },
+  "engine": {
+    "rounds": 20,
+    "warmup": 500,
+    "frames": 1500,
+    "extent": [1920, 1080],
+    "configurations": ["direct", "empty", "full"],
+    "expected_runs_per_variant": 60,
+    "order": "random configurations per round",
+    "measured": "mean_ms: wall-clock time per engine.step(); with timestamps also gpu_frame_ms (start to end of the command buffer) and gpu_post_ms (end of the main pass to the end of apply() or the direct blit); without timestamps both GPU columns are 0"
+  },
+  "execution": "sequential phases in one session; Release without validation or capture layers (checked with VK_LOADER_DEBUG=layer); MoltenVK ICD of Vulkan SDK 1.4.357.1; Python 3.13 from Homebrew and /bin/bash both native arm64 (arch -arm64, checked before every phase); caffeinate -dims against display and system sleep; AC power; built-in display at 3456 x 2234 points (1x, no scaling, 120 Hz), so that the engine window (1920 x 1108 points) is fully visible and not covered by another window (decision of the student, 2026-10-25); window list with a visibility check every 20 s during the engine phases",
+  "checks": "validation.json: every configuration of both variants once in the debug build with the validation layer, layer loading confirmed by the loader; checks.json: architecture of all programs, no layer in the release programs, swapchain from an API dump (IMMEDIATE, 1920 x 1080, B8G8R8A8_SRGB, 3 images), screenshot 1920 x 1080",
+  "pilot": "36 runs in pilot/runs.csv (standalone empty, sobel and full at both sizes and the three engine configurations, both variants, two rounds) under the earlier display of 1496 x 967 points; under the display of the main series one check run and 12 engine runs in pilot/engine-visible.csv (three configurations, both variants, two rounds), each with a check that the window is fully visible; all excluded from the main analysis",
+  "known_deviation": "In the first pilot (display 1496 x 967 points, window larger than the display and partly covered) the engine frame time was 5.3 to 5.5 ms in every configuration and both variants, as on 2026-10-24 and far above the 2.4 to 3.6 ms of 2026-09-25, although the orchestration ran natively and the machine was on AC power without charging. Sampling a run with sample shows the main thread waiting in -[CAMetalLayer nextDrawable] for most of the frame, so the frame time was limited by the presentation. Under the display of the main series (3456 x 2234 points, window fully visible) the 12 engine pilot runs took 1.7 to 2.5 ms (direct, empty) and 3.7 to 4.4 ms (full); the first five runs were slower than the others. The standalone phase stays first, so the engine phases start after about 13 minutes of load.",
+  "statistics": "Run means; paired round differences; pointwise t-based 95% confidence intervals; two-sided t tests and Wilcoxon signed-rank tests as a check; Holm families of two standalone additivity tests per kind of time and three engine contrasts per kind of time. No equivalence claim from non-rejection.",
+  "failure_policy": "Stop on a process failure or skipped engine frame; preserve partial data and logs. No slow valid observation is discarded."
+}

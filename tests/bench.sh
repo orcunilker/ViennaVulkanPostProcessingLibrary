@@ -1,6 +1,6 @@
 #!/bin/bash
 # runs the standalone benchmark for every configuration in interleaved, shuffled rounds
-# usage: bench.sh <bench-binary> <rounds> <output.csv>
+# usage: bench.sh <bench-binary> <rounds> <output.csv>, with VVPP_GPU_TIMESTAMPS=1 also the GPU timestamps
 set -euo pipefail
 
 if [ $# -ne 3 ]; then
@@ -22,7 +22,9 @@ fi
 WARMUP=500
 ITERATIONS=500
 SIZES="1920x1080 3840x2160"
-CONFIGS="empty full tonemap chromatic greyscale vignette filmgrain colorgrade solarize sabattier emboss sobel speedlines highlight segmentation dither invert"
+# the empty chain, the 15 single effects, the full chain, the default chains of the example applications
+# and the invert shader repeated in three, five and fifteen passes
+CONFIGS="empty full tonemap chromatic greyscale vignette filmgrain colorgrade solarize sabattier emboss sobel speedlines highlight segmentation dither invert vsg3 vve5 invert3 invert5 invert15"
 
 echo "round,config,width,height,warmup,iterations,mean_ms,gpu_ms" > "$OUT"
 

@@ -11,7 +11,7 @@ at the University of Vienna (2026).
 
 - Vulkan 1.1 or higher
 - The Vulkan SDK with `slangc`, which compiles the shaders during the build, and the validation
-  layer for the test
+  layer for the tests
 - CMake 3.15 or higher and a C++20 compiler
 
 The library has only been tested on macOS with MoltenVK.
@@ -24,8 +24,17 @@ cmake --build build
 ctest --test-dir build
 ```
 
-The test (`tests/testlib.cpp`) creates a device, clears a 256×256 image to red, applies all effects
-and writes the result to `build/tests/output.ppm`. It runs with the validation layer enabled.
+All three tests run with the validation layer enabled and fail if it reports an error:
+
+- `tests/testlib.cpp` creates a device, clears a 256×256 image to red, applies all effects and
+  writes the result to `build/tests/output.ppm`.
+- `tests/pixeltest.cpp` applies no effect, invert alone and greyscale with invert to a 2×2 sRGB
+  image and compares every pixel with the value calculated on the CPU. This checks the format
+  conversions of both blits and both internal images, which hold the result after an even and
+  after an odd number of effects.
+- `tests/cleanuptest.cpp` lets each image allocation of the constructor and the creation of its
+  pipeline layout fail once. When the test destroys the device, the validation layer reports every
+  object that the failed constructor left behind.
 
 ## Adding the library to a project
 
@@ -34,14 +43,14 @@ With CMake's `FetchContent`:
 ```cmake
 include(FetchContent)
 FetchContent_Declare(vvppl
-  GIT_REPOSITORY https://github.com/orcunilker/Vienna-Vulkan-Post-Processing-Library.git
-  GIT_TAG v1.0)
+  GIT_REPOSITORY https://github.com/orcunilker/ViennaVulkanPostProcessingLibrary.git
+  GIT_TAG v1.0.1)
 FetchContent_MakeAvailable(vvppl)
 
 target_link_libraries(my_app PRIVATE vvppl)
 ```
 
-`add_subdirectory` on a copy of the repository works the same way. The test is only built when the
+`add_subdirectory` on a copy of the repository works the same way. The tests are only built when the
 library is the top-level project.
 
 Hosts that load Vulkan with [volk](https://github.com/zeux/volk) set `VVPPL_USE_VOLK` to `ON`
@@ -131,7 +140,8 @@ dispatch that reads one internal image and writes the other. A final blit copies
 `dst`. The internal format lets the shaders work on HDR values and on sRGB swapchain images, which
 cannot be storage images. Each frame in flight has its own pair of internal images. An effect's
 pipeline is created the first time the effect is added. Its settings are recorded as push
-constants.
+constants. If the constructor cannot create a Vulkan object, it destroys the objects it has already
+created and throws `std::runtime_error`.
 
 ## Adding an effect
 

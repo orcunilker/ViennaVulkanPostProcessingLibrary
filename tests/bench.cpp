@@ -6,6 +6,7 @@
 #include <string>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 
@@ -176,6 +177,11 @@ const std::vector<std::string> fullChain = {
 	"sabattier", "emboss", "sobel", "speedlines", "highlight", "segmentation", "dither", "invert"
 };
 
+// The effects that the example applications add by default: vsgortho in VulkanSceneGraph (vsg3)
+// and both versions of the Vienna Vulkan Engine (vve5), here with the default settings of the library.
+const std::vector<std::string> vsgChain = {"vignette", "chromatic", "filmgrain"};
+const std::vector<std::string> vveChain = {"chromatic", "vignette", "tonemap", "greyscale", "filmgrain"};
+
 // adds one effect by its command-line name, with the default settings of the library
 void addEffect(vvppl::PostProcessing& pp, const std::string& name) {
 	if (name == "tonemap") pp.addTonemap();
@@ -197,8 +203,12 @@ void addEffect(vvppl::PostProcessing& pp, const std::string& name) {
 }
 
 // Records one apply call between two GPU timestamps. A timestamp query can only be written
-// again after a reset, so both queries are reset first.
+// again after a reset, so both queries are reset first. Without a query pool only apply() is recorded.
 void recordApply(VkCommandBuffer cmd, vvppl::PostProcessing& pp, VkImage src, VkImage dst, VkQueryPool queries) {
+	if (queries == VK_NULL_HANDLE) {
+		pp.apply(cmd, src, dst);
+		return;
+	}
 	vkCmdResetQueryPool(cmd, queries, 0, 2);
 	vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queries, 0);
 	pp.apply(cmd, src, dst);
@@ -211,7 +221,7 @@ int main(int argc, char* argv[]) {
 
 	// ### command line: bench <width> <height> <config> <warmup> <iterations>
 	if (argc != 6) {
-		std::cerr << "usage: bench <width> <height> <empty|full|effect> <warmup> <iterations>\n";
+		std::cerr << "usage: bench <width> <height> <empty|full|vsg3|vve5|invert<n>|effect> <warmup> <iterations>\n";
 		return 1;
 	}
 	const uint32_t width = (uint32_t)std::stoul(argv[1]);
@@ -368,16 +378,23 @@ int main(int argc, char* argv[]) {
 
 	// ### query pool for the two GPU timestamps around each apply call
 
+	// only with VVPP_GPU_TIMESTAMPS=1, as in the engine benchmark; without it the program records
+	// nothing but apply() and writes 0 into the column gpu_ms
+	const char* timestampVariable = std::getenv("VVPP_GPU_TIMESTAMPS");
+	const bool timestamps = timestampVariable != nullptr && std::string(timestampVariable) == "1";
+
 	VkQueryPoolCreateInfo queryInfo{};
 	queryInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
 	queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
 	queryInfo.queryCount = 2;
 
 	VkQueryPool queryPool = VK_NULL_HANDLE;
-	res = vkCreateQueryPool(device, &queryInfo, nullptr, &queryPool);
-	if (res != VK_SUCCESS) {
-		std::cerr << "vkCreateQueryPool failed: " << res << "\n";
-		return 1;
+	if (timestamps) {
+		res = vkCreateQueryPool(device, &queryInfo, nullptr, &queryPool);
+		if (res != VK_SUCCESS) {
+			std::cerr << "vkCreateQueryPool failed: " << res << "\n";
+			return 1;
+		}
 	}
 
 	// nanoseconds per timestamp tick, and a mask for counters with fewer than 64 valid bits
@@ -441,6 +458,13 @@ int main(int argc, char* argv[]) {
 		vvppl::PostProcessing pp(device, physicalDevice, width, height);
 		if (config == "full") {
 			for (const std::string& name : fullChain) addEffect(pp, name);
+		} else if (config == "vsg3") {
+			for (const std::string& name : vsgChain) addEffect(pp, name);
+		} else if (config == "vve5") {
+			for (const std::string& name : vveChain) addEffect(pp, name);
+		} else if (config.rfind("invert", 0) == 0 && config.size() > 6) {
+			// invert3, invert5, invert15: the invert shader in this many passes
+			pp.setInvertPasses((uint32_t)std::stoul(config.substr(6)));
 		} else if (config != "empty") {
 			addEffect(pp, config);
 		}
@@ -463,12 +487,14 @@ int main(int argc, char* argv[]) {
 			total += std::chrono::steady_clock::now() - start;
 
 			// read both timestamps after the clock has stopped, so the readback is not measured
-			uint64_t ticks[2] = {};
-			if (vkGetQueryPoolResults(device, queryPool, 0, 2, sizeof(ticks), ticks, sizeof(uint64_t),
-					VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT) != VK_SUCCESS) {
-				throw std::runtime_error("vkGetQueryPoolResults failed");
+			if (timestamps) {
+				uint64_t ticks[2] = {};
+				if (vkGetQueryPoolResults(device, queryPool, 0, 2, sizeof(ticks), ticks, sizeof(uint64_t),
+						VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT) != VK_SUCCESS) {
+					throw std::runtime_error("vkGetQueryPoolResults failed");
+				}
+				gpuTotal += double((ticks[1] - ticks[0]) & timestampMask) * nanosecondsPerTick / 1e6;
 			}
-			gpuTotal += double((ticks[1] - ticks[0]) & timestampMask) * nanosecondsPerTick / 1e6;
 		}
 
 		// config,width,height,warmup,iterations,mean_ms,gpu_ms

@@ -121,7 +121,7 @@ namespace vvppl {
          * @param physicalDevice  Only used to find memory types.
          * @param width,height    Size of the images passed to apply().
          * @param framesInFlight  Number of command buffers with an apply() that can execute at the same time.
-         * @throws std::runtime_error if a Vulkan object cannot be created.
+         * @throws std::runtime_error if a Vulkan object cannot be created; the objects created before are destroyed.
          */
         PostProcessing(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height,
                        uint32_t framesInFlight = 1);
@@ -202,6 +202,10 @@ namespace vvppl {
         void removeDither();
         ///@}
 
+        /// @brief Measurement branch only: replaces the chain by @p count passes of the invert shader, which the add
+        /// functions allow only once. apply() records these passes like any other chain.
+        void setInvertPasses(uint32_t count);
+
     private:
         VkDevice m_device;
         VkPhysicalDevice m_physicalDevice;
@@ -226,6 +230,8 @@ namespace vvppl {
         void createImages();
         void destroyImages();
         void writeDescriptorSets();
+        // destroys all Vulkan objects of the library, also after a constructor that failed halfway
+        void destroyAll();
 
         // the fixed place of every effect in the chain, same order as the add/remove list above
         enum EffectType : uint32_t {
